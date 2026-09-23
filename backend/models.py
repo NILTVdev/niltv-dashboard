@@ -607,6 +607,7 @@ class Application(Base):
     docusign_envelope_id = Column(Text)
     docusign_status = Column(Text)
     agreement_sent_at = Column(TIMESTAMP(timezone=True))
+    agreement_reminded_at = Column(TIMESTAMP(timezone=True))   # last resend of the same envelope
     signed_at = Column(TIMESTAMP(timezone=True))
 
     stripe_account_id = Column(Text)

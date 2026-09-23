@@ -287,7 +287,9 @@ def decline(db: Session, app: Application, reason: str = "", by: str = "staff",
 
 def send_agreement(db: Session, app: Application) -> dict:
     """Create the DocuSign envelope (or email the PowerForm fallback).
-    approved -> agreement_sent. Idempotent: an existing envelope is re-sent."""
+    approved -> agreement_sent. Idempotent: an existing envelope is re-sent,
+    which keeps agreement_sent_at (when it first went out) and stamps
+    agreement_reminded_at instead."""
     if app.status not in ("approved", "agreement_sent"):
         raise ValueError(f"cannot send agreement from status {app.status}")
     s = get_settings()
@@ -297,6 +299,9 @@ def send_agreement(db: Session, app: Application) -> dict:
         if app.docusign_envelope_id and docusign.is_configured():
             docusign.resend(app.docusign_envelope_id)
             result.update(sent=True, mode="docusign-resend")
+            # DocuSign resets the recipient to "sent" until the new email is opened.
+            app.docusign_status = "sent"
+            app.agreement_reminded_at = now_utc()
             record(db, app, "agreement_resent", actor="staff",
                    detail={"envelope_id": app.docusign_envelope_id})
         elif docusign.is_configured():
@@ -324,7 +329,8 @@ def send_agreement(db: Session, app: Application) -> dict:
 
     if result["sent"]:
         app.status = "agreement_sent"
-        app.agreement_sent_at = now_utc()
+        if result["mode"] != "docusign-resend" or app.agreement_sent_at is None:
+            app.agreement_sent_at = now_utc()
     app.updated_at = now_utc()
     db.commit()
     return result
@@ -520,8 +526,10 @@ def progress(app: Application) -> list[dict]:
         {"key": "agreement", "label": "Agreement signed",
          "state": ("done" if app.status in ("signed", "stripe_pending", "accepted")
                    else "current" if app.status in ("approved", "agreement_sent") else "todo"),
-         "detail": (f"DocuSign {app.docusign_status}" if app.docusign_status else
-                    ("not sent yet" if app.status == "approved" else "")),
+         "detail": ((f"DocuSign {app.docusign_status}" if app.docusign_status else
+                     ("not sent yet" if app.status == "approved" else ""))
+                    + (f", reminded {app.agreement_reminded_at:%b} {app.agreement_reminded_at.day}"
+                       if app.agreement_reminded_at and app.status in ("approved", "agreement_sent") else "")),
          "at": app.signed_at or app.agreement_sent_at},
     ]
     if app.international:

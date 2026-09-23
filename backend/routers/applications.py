@@ -230,6 +230,7 @@ class ApplicationOut(BaseModel):
     docusign_envelope_id: Optional[str]
     docusign_status: Optional[str]
     agreement_sent_at: Optional[datetime]
+    agreement_reminded_at: Optional[datetime] = None
     signed_at: Optional[datetime]
     stripe_account_id: Optional[str]
     stripe_payouts_enabled: Optional[bool]

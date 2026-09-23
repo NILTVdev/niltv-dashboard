@@ -537,6 +537,7 @@ export interface Application {
   docusign_envelope_id: string | null;
   docusign_status: string | null;
   agreement_sent_at: string | null;
+  agreement_reminded_at?: string | null;
   signed_at: string | null;
   stripe_account_id: string | null;
   stripe_payouts_enabled: boolean | null;
