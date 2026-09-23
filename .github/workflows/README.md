@@ -14,8 +14,7 @@ Runs on every PR and on pushes to `main`. One job covers two checks:
   edited so the PR goes green after the fix. This is what stops a feature
   branch from deploying straight to production.
 - **Secret scan.** gitleaks scans every commit reachable from the ref with the
-  default rules (`.gitleaks.toml`). A supplementary scan from a private rule
-  file runs when its repository secret is set.
+  default rules (`.gitleaks.toml`).
 
 ## Frontend CI (`frontend-ci.yml`)
 
