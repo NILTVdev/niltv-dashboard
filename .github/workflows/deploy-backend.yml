@@ -1,0 +1,128 @@
+name: Deploy Backend to EC2
+
+# main -> the production service
+# dev  -> the dev service
+# The script picks the checkout and service from the pushed branch.
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - "backend/**"
+      - "scripts/**"
+      - "requirements.txt"
+      - ".github/workflows/deploy-backend.yml"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          VALUATION_RATES: ${{ secrets.VALUATION_RATES }}
+          DASHBOARD_PASSWORD_DEV: ${{ secrets.DASHBOARD_PASSWORD_DEV }}
+          DASHBOARD_API_KEY_DEV: ${{ secrets.DASHBOARD_API_KEY_DEV }}
+          DASHBOARD_PASSWORD_PROD: ${{ secrets.DASHBOARD_PASSWORD_PROD }}
+          DASHBOARD_API_KEY_PROD: ${{ secrets.DASHBOARD_API_KEY_PROD }}
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          envs: VALUATION_RATES,DASHBOARD_PASSWORD_DEV,DASHBOARD_API_KEY_DEV,DASHBOARD_PASSWORD_PROD,DASHBOARD_API_KEY_PROD
+          script: |
+            set -e
+            BRANCH="${{ github.ref_name }}"
+            if [ "$BRANCH" = "dev" ]; then
+              APP_DIR=/home/ubuntu/niltv_dashboard_dev; SERVICE=niltv-api-dev
+            else
+              APP_DIR=/home/ubuntu/niltv_dashboard;     SERVICE=niltv-api
+            fi
+            echo "==> Deploying $BRANCH to $APP_DIR ($SERVICE)"
+            cd "$APP_DIR"
+
+            echo "==> Syncing to origin/main..."
+            # Pin origin to the canonical URL: deploy-key auth does not follow
+            # renamed-repo redirects.
+            git remote set-url origin git@github.com:NILTVdev/niltv-dashboard.git
+            # The box is a deploy target, not a workspace: mirror the branch exactly
+            # and discard any local commits. Untracked files (.env, venv, logs) are
+            # unaffected.
+            git fetch origin "$BRANCH"
+            if ! git diff --quiet "origin/$BRANCH" -- || [ -n "$(git log "origin/$BRANCH..HEAD" --oneline)" ]; then
+              echo "==> WARNING: discarding local commits/changes:"
+              git log "origin/$BRANCH..HEAD" --oneline || true
+              git status --short || true
+            fi
+            git reset --hard "origin/$BRANCH"
+
+            echo "==> Runtime-only config (never in git)..."
+            # Values held as repository secrets are upserted into .env when set: the
+            # valuation rate card, and the dashboard login / API key per environment
+            # (rotate by changing the secret and redeploying).
+            if [ "$BRANCH" = "dev" ]; then ENV_SUFFIX=DEV; else ENV_SUFFIX=PROD; fi
+            upsert_env() {  # $1 = .env key, $2 = value
+              [ -n "$2" ] || return 0
+              grep -v "^$1=" .env > .env.tmp || true
+              echo "$1=$2" >> .env.tmp
+              mv .env.tmp .env
+            }
+            upsert_env VALUATION_RATES "$VALUATION_RATES"
+            pw="DASHBOARD_PASSWORD_$ENV_SUFFIX"; key="DASHBOARD_API_KEY_$ENV_SUFFIX"
+            upsert_env DASHBOARD_PASSWORD "${!pw}"
+            upsert_env DASHBOARD_API_KEY "${!key}"
+            mkdir -p data
+
+            echo "==> Installing Python dependencies..."
+            source venv/bin/activate
+            pip install -q -r requirements.txt
+
+            echo "==> Applying pending migrations..."
+            set -a; . ./.env; set +a
+            python -m scripts.migrate
+
+            echo "==> Ensuring run_job.sh is executable..."
+            chmod +x scripts/run_job.sh
+
+            if [ "$BRANCH" = "dev" ]; then
+              echo "==> dev: crontab left untouched (nightly jobs run only from the prod checkout)"
+              sudo systemctl restart "$SERVICE"; sleep 2; sudo systemctl is-active "$SERVICE"
+              exit 0
+            fi
+
+            # The hourly jobs start on different minutes so they never share one.
+            echo "==> Reinstalling crontab..."
+            WRAPPER="/home/ubuntu/niltv_dashboard/scripts/run_job.sh"
+            printf '%s\n' \
+              "0 * * * * $WRAPPER backend.jobs.run_zoomph" \
+              "0 2 * * * $WRAPPER backend.jobs.run_instagram" \
+              "0 3 * * * $WRAPPER backend.jobs.backfill_zoomph" \
+              "0 4 * * * $WRAPPER backend.jobs.run_web_analytics" \
+              "10 * * * * $WRAPPER backend.jobs.run_brand_ig" \
+              "15 */3 * * * $WRAPPER backend.jobs.run_niltv_network" \
+              "*/15 * * * * $WRAPPER backend.jobs.export_applications_sheet" \
+              "45 5 * * * $WRAPPER backend.jobs.run_manual_channels" \
+              "0 0 2 * * $WRAPPER backend.jobs.refresh_brand_ig_token" \
+              | crontab -
+
+            echo "==> Restarting uvicorn via systemd..."
+            sudo systemctl restart "$SERVICE"
+            sleep 2
+
+            echo "==> Deploy complete. Status:"
+            sudo systemctl is-active "$SERVICE"
+            echo "==> Current crontab:"
+            crontab -l
+
+      # The public health route through nginx, so a service that restarted but
+      # is not reachable from outside fails the run.
+      - name: Smoke check
+        env:
+          URL: ${{ github.ref_name == 'main' && 'https://api.niltv.com' || 'https://api-dev.niltv.com' }}
+        run: |
+          for i in $(seq 1 12); do
+            if curl -sf -m 15 "$URL/api/health"; then echo; echo "healthy: $URL"; exit 0; fi
+            echo "[$i/12] $URL not healthy yet"; sleep 5
+          done
+          echo "::error::$URL/api/health did not return 200 after the deploy"
+          exit 1

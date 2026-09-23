@@ -1,0 +1,73 @@
+name: Checks
+
+# One runner for the small per-PR checks: the secret scan over the full history
+# (plus a supplementary scan when its private rule file is set)
+# and the PR base rule. main deploys to production, so only three kinds of
+# branch may target it:
+#   dev        the release PR (dev -> main)
+#   hotfix/*   an urgent fix that skips dev (merge main back into dev after)
+#   revert-*   backing out a bad release
+# Every other PR belongs on dev. The check fails with a comment saying how to
+# retarget, and re-runs when the base is edited so a fixed PR goes green.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, reopened, edited, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  checks:
+    name: Secret scan and PR base
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      NAME_GUARD_TOML: ${{ secrets.NAME_GUARD_TOML }}
+    steps:
+      - name: Feature branches target dev
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.base_ref }}
+          HEAD: ${{ github.head_ref }}
+          PR: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$BASE" != "main" ]; then
+            echo "ok: $HEAD -> $BASE"
+            exit 0
+          fi
+          case "$HEAD" in
+            dev|hotfix/*|revert-*)
+              echo "ok: $HEAD -> main"
+              exit 0 ;;
+          esac
+
+          marker="<!-- pr-base-guard -->"
+          if ! gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json comments --jq '.comments[].body' | grep -qF "$marker"; then
+            gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body "$marker
+          This PR targets **main**, which deploys straight to production.
+
+          Feature work lands on **dev** first. Merging there deploys the dev stack automatically, and dev is released with a dev -> main PR once it checks out.
+
+          Change the base with the **Edit** button next to the title, or run \`gh pr edit $PR --base dev\`. Only \`hotfix/*\` and \`revert-*\` branches may target main directly."
+          fi
+          echo "::error::'$HEAD' must target dev, not main (main accepts only dev, hotfix/*, revert-*)"
+          exit 1
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks
+        run: |
+          curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.24.3/gitleaks_8.24.3_linux_x64.tar.gz | tar -xz gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+      - name: Scan every commit reachable from this ref
+        run: gitleaks git --redact --no-banner --verbose --exit-code 1 .
+      - name: Supplementary scan (private rule file)
+        if: ${{ env.NAME_GUARD_TOML != '' }}
+        run: |
+          printf '%s\n' "$NAME_GUARD_TOML" > "$RUNNER_TEMP/name-guard.toml"
+          gitleaks git --config "$RUNNER_TEMP/name-guard.toml" --redact --no-banner --exit-code 1 .

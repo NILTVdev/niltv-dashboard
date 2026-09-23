@@ -1,0 +1,38 @@
+# Amplify Hosting build spec for the dashboard frontend (app d3nvp99dnw61rc).
+# A build spec in the repo takes precedence over the one in the console, so
+# this file is the source of truth. It matches the console spec plus the
+# BUILD_COMMIT / BUILD_BRANCH stamp that /api/health reports, and a postBuild
+# check that the build can authenticate to its backend: a build whose key or
+# URL does not match fails here and the previous build stays live.
+#
+# Environment variables come from the Amplify console. Put per-environment
+# values (INTERNAL_API_URL, DASHBOARD_*) on the BRANCH, never at the app
+# level: an app-level value applies to every branch, so the next build of any
+# branch ships it.
+version: 1
+applications:
+  - frontend:
+      phases:
+        preBuild:
+          commands:
+            - npm ci --cache .npm --prefer-offline
+        build:
+          commands:
+            - env | grep -E "^(DASHBOARD_|INTERNAL_API)" >> .env.production
+            - echo "BUILD_COMMIT=$AWS_COMMIT_ID" >> .env.production
+            - echo "BUILD_BRANCH=$AWS_BRANCH" >> .env.production
+            - npm run build
+        postBuild:
+          commands:
+            # The same keyed backend call every page makes; three tries so a backend
+            # restart during the build does not fail it.
+            - 'KEY="${DASHBOARD_API_KEY:-$DASHBOARD_PASSWORD}"; for i in 1 2 3; do code=$(curl -s -o /dev/null -w "%{http_code}" -m 20 -H "X-API-Key: $KEY" "$INTERNAL_API_URL/api/health/auth"); if [ "$code" = "200" ]; then echo "backend auth ok: $INTERNAL_API_URL"; break; fi; echo "attempt $i: backend answered ${code:-nothing}"; if [ "$i" = 3 ]; then echo "build cannot authenticate to $INTERNAL_API_URL"; exit 1; fi; sleep 10; done'
+      artifacts:
+        baseDirectory: .next
+        files:
+          - '**/*'
+      cache:
+        paths:
+          - .next/cache/**/*
+          - .npm/**/*
+    appRoot: frontend

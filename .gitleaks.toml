@@ -1,0 +1,4 @@
+# Repo-local gitleaks config: the default secret rules. Maintainer clones and
+# CI run a second scan from a private rule file (see README, Secret hygiene).
+[extend]
+useDefault = true

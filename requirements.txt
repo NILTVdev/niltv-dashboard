@@ -1,0 +1,32 @@
+# API & web framework
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+python-multipart==0.0.32   # required by the file-upload routes (Form/UploadFile)
+
+# Database
+sqlalchemy==2.0.52
+psycopg2-binary==2.9.12
+
+# HTTP client (Instagram / Zoomph API calls)
+httpx==0.28.1
+
+# Roster import
+pandas==3.0.5
+openpyxl==3.1.5
+
+# AWS (S3 backups + SNS alerts + CloudWatch logging)
+boto3==1.43.82
+watchtower==3.4.0
+
+# Google Analytics & Search Console
+google-analytics-data==0.23.0
+google-api-python-client==2.199.0
+google-auth==2.57.0
+google-auth-httplib2==0.4.2
+
+# DocuSign JWT grant (RS256) for athlete onboarding
+PyJWT[crypto]==2.13.0
+
+# Settings
+pydantic-settings==2.15.0
+python-dotenv==1.2.3

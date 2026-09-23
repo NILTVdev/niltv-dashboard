@@ -1,0 +1,95 @@
+# Runs on every pull request and on pushes to main (the release branch).
+# dev is not re-tested after a merge: it carries the tree the PR already
+# checked, and its deploy is a separate workflow.
+name: Backend CI
+
+on:
+  pull_request:
+    paths:
+      - "backend/**"
+      - "scripts/migrate.py"
+      - "requirements.txt"
+      - ".github/workflows/backend-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "scripts/migrate.py"
+      - "requirements.txt"
+      - ".github/workflows/backend-ci.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: niltv_user
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: niltv_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # Dummy values so pydantic Settings (loaded at import in database.py)
+      # resolves cleanly. No real credentials needed for CI.
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      DB_NAME: niltv_db
+      DB_USER: niltv_user
+      DB_PASS: postgres
+      IG_ACCESS_TOKEN: test
+      IG_BUSINESS_ID: test
+      ZOOMPH_API_KEY: test
+      ZOOMPH_FEED_ID: test
+      AWS_S3_BUCKET: test-bucket
+      DASHBOARD_PASSWORD: test
+      ENVIRONMENT: dev
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install ruff pytest
+
+      # Catch real errors only (undefined names, syntax) — low noise on existing
+      # code. Expand the rule set later as the codebase is cleaned up.
+      - name: Lint (fatal errors)
+        run: ruff check backend --select E9,F63,F7,F82
+
+      - name: Syntax check
+        run: python -m compileall -q backend
+
+      # Apply every migration in order against a throwaway Postgres with the
+      # same runner the deploy step and the local compose stack use, so a
+      # broken .sql (or a broken runner) is caught before it reaches a real DB.
+      - name: Apply migrations
+        run: |
+          python -m scripts.migrate
+          python -m scripts.migrate --status
+
+      # Functional tests: app boots, auth is enforced, and the multi-site
+      # web-analytics endpoints filter data by site. Runs against the seeded
+      # Postgres (migrations applied above), so it also catches model↔schema
+      # drift and import errors.
+      - name: Functional tests
+        run: python -m pytest backend/tests -q

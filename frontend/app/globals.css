@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: #ffffff;
+  --color-foreground: #0f172a;
+  --color-muted: #64748b;
+  --color-muted-bg: #f8fafc;
+  --color-border: #e2e8f0;
+  --color-duke: #003087;
+  --color-duke-light: #00539b;
+  --color-duke-pale: #e8eef7;
+  --font-sans: "Inter", system-ui, sans-serif;
+}
+
+/* Brand theme — consumed as arbitrary values (bg-[var(--brand)] etc.) so the
+   whole dashboard re-themes off html[data-brand], set pre-paint in layout.tsx.
+   recharts props can't resolve CSS vars; charts read hexes from useBrand(). */
+:root {
+  --brand: #003087;        /* TrueBlue TV / Duke blue */
+  --brand-light: #00539b;
+  --brand-pale: #e8eef7;
+}
+html[data-brand="niltv"] {
+  --brand: #101014;        /* NIL TV network: near-black + brass gold */
+  --brand-light: #b4975a;
+  --brand-pale: #f6f2e9;
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}

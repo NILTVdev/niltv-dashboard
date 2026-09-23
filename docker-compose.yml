@@ -1,0 +1,83 @@
+# LOCAL environment: Postgres + API + dashboard, no auth, no secrets, no side
+# effects. See README "Environments".
+#
+#   docker compose up            # http://localhost:3000 (dashboard), :8000/docs (API)
+#   docker compose exec api python -m scripts.seed_local   # optional: load seed/backups/
+#   docker compose down -v       # wipe the local database
+#
+# The API refuses to start in ENVIRONMENT=local unless DB_HOST is a local
+# database (backend/config.py), so this stack can never sit in front of dev or prod.
+
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: niltv_user
+      POSTGRES_PASSWORD: niltv
+      POSTGRES_DB: niltv_db
+    ports:
+      - "55432:5432"          # host access for psql / GUI clients
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U niltv_user -d niltv_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: local
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: niltv_db
+      DB_USER: niltv_user
+      DB_PASS: niltv
+      DASHBOARD_USERNAME: local
+      DASHBOARD_PASSWORD: local
+      # Third-party tokens are never needed to browse the dashboard; the
+      # nightly jobs are not scheduled here. Placeholders satisfy Settings.
+      IG_ACCESS_TOKEN: local
+      IG_BUSINESS_ID: local
+      ZOOMPH_API_KEY: local
+      ZOOMPH_FEED_ID: local
+      AWS_S3_BUCKET: niltv-dashboard-backups
+      AWS_REGION: us-east-1
+      # Optional AWS credentials passed through from your shell; empty by default.
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+    volumes:
+      - ./backend:/app/backend
+      - ./scripts:/app/scripts
+      - ./seed:/app/seed
+    ports:
+      - "8000:8000"
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    depends_on:
+      - api
+    environment:
+      NODE_ENV: development
+      AUTH_DISABLED: "true"
+      INTERNAL_API_URL: http://api:8000
+      DASHBOARD_USERNAME: local
+      DASHBOARD_PASSWORD: local
+    volumes:
+      - ./frontend:/app
+      - web_node_modules:/app/node_modules
+      - web_next:/app/.next
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:
+  web_node_modules:
+  web_next:

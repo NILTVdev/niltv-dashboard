@@ -1,0 +1,47 @@
+.env
+.env.*
+!.env.example
+!.env.local.example
+*.bak
+seed/
+.claude/
+frontend/.env.local
+
+# SSH keys
+*.pem
+*.key
+*.p12
+*credentials*.json
+
+# Python
+__pycache__/
+*.pyc
+*.pkl
+.venv/
+venv/
+
+# R artifacts
+.Rhistory
+.RData
+*.RDS
+
+# Node
+node_modules/
+.next/
+
+# OS
+.DS_Store
+Thumbs.db
+
+*secret-robot*.json
+*.csv
+*.pdf
+*.xlsx
+docs/
+# private data (rosters, exports) — never commit
+data/
+*.xlsx
+*.csv
+
+# maintainer scripts copied in for a single run; never committed
+scripts/_local_*

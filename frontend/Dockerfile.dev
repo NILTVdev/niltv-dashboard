@@ -1,0 +1,9 @@
+# Dashboard dev server for the LOCAL compose stack (hot reload via bind mount).
+# Production is built by AWS Amplify, not this image.
+FROM node:20-alpine
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+EXPOSE 3000
+CMD ["sh", "-c", "npm install --no-audit --no-fund >/dev/null && npm run dev -- --hostname 0.0.0.0"]
