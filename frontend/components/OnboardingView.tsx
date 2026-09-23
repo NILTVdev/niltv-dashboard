@@ -452,7 +452,13 @@ function Detail({ row, busy, onRun }: { row: Application; busy: boolean; onRun: 
           ))}
         </ol>
         <div className="mt-4 space-y-1 text-xs text-gray-600">
-          {row.docusign_envelope_id && <div>Envelope <code className="text-[11px]">{row.docusign_envelope_id}</code> ({row.docusign_status})</div>}
+          {row.docusign_envelope_id && (
+            <div>
+              Envelope <code className="text-[11px]">{row.docusign_envelope_id}</code> ({row.docusign_status})
+              {row.agreement_sent_at && <> · sent {fmtWhen(row.agreement_sent_at)}</>}
+              {row.agreement_reminded_at && <> · last reminded {fmtWhen(row.agreement_reminded_at)}</>}
+            </div>
+          )}
           {row.stripe_account_id && (
             <div className="flex items-center gap-1">
               <a className="text-[var(--brand)] hover:underline inline-flex items-center gap-1"
