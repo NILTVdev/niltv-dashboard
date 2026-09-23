@@ -7,7 +7,7 @@ same shape; unavailable platforms return available=False so the frontend can
 render "coming soon" states without code changes when new platforms are added.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -80,9 +80,23 @@ class Aggregate(BaseModel):
     platforms_total: int
 
 
+class WeeklyStats(BaseModel):
+    start: datetime
+    end: datetime
+    posts: int
+    views: int
+    new_followers: Optional[int]
+
+
+class WeeklyComparison(BaseModel):
+    current: WeeklyStats
+    previous: WeeklyStats
+
+
 class NetworkScreenSummary(BaseModel):
     platforms: list[PlatformSummary]
     aggregate: Aggregate
+    weekly_comparison: WeeklyComparison
 
 
 class TopPost(BaseModel):
@@ -117,18 +131,72 @@ def _month_bounds(year: int, month: int) -> tuple[datetime, datetime]:
 
 
 def _week_bounds(now: datetime) -> tuple[datetime, datetime]:
-    """Return (start, end) for the current ISO week (Mon–Sun) in UTC."""
-    monday = now - __import__("datetime").timedelta(days=now.weekday())
-    start = monday.replace(hour=0, minute=0, second=0, microsecond=0)
-    end = start + __import__("datetime").timedelta(days=7)
-    return start, end
+    """Return the last seven UTC calendar days, including today."""
+    end = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    return end - timedelta(days=7), end
 
 
 def _prev_week_bounds(now: datetime) -> tuple[datetime, datetime]:
-    import datetime as dt
     this_start, _ = _week_bounds(now)
-    prev_start = this_start - dt.timedelta(days=7)
+    prev_start = this_start - timedelta(days=7)
     return prev_start, this_start
+
+
+def _follower_delta(db: Session, start: datetime, end: datetime) -> Optional[int]:
+    latest = (
+        db.query(BrandSnapshot)
+        .filter(
+            BrandSnapshot.account == NILTV_ACCOUNT,
+            BrandSnapshot.followers.isnot(None),
+            BrandSnapshot.pulled_at < end,
+        )
+        .order_by(BrandSnapshot.pulled_at.desc())
+        .first()
+    )
+    baseline = (
+        db.query(BrandSnapshot)
+        .filter(
+            BrandSnapshot.account == NILTV_ACCOUNT,
+            BrandSnapshot.followers.isnot(None),
+            BrandSnapshot.pulled_at < start,
+        )
+        .order_by(BrandSnapshot.pulled_at.desc())
+        .first()
+    )
+    if not latest or not baseline:
+        return None
+    return int(latest.followers) - int(baseline.followers)
+
+
+def _weekly_stats(db: Session, start: datetime, end: datetime) -> WeeklyStats:
+    row = (
+        db.query(
+            func.count(NiltvNetworkPost.id),
+            func.coalesce(func.sum(NiltvNetworkPost.views), 0),
+        )
+        .filter(
+            _NILTV_POST_FILTER,
+            NiltvNetworkPost.publish_time >= start,
+            NiltvNetworkPost.publish_time < end,
+        )
+        .one()
+    )
+    return WeeklyStats(
+        start=start,
+        end=end,
+        posts=int(row[0]),
+        views=int(row[1]),
+        new_followers=_follower_delta(db, start, end),
+    )
+
+
+def _weekly_comparison(db: Session, now: datetime) -> WeeklyComparison:
+    current_start, current_end = _week_bounds(now)
+    previous_start, previous_end = _prev_week_bounds(now)
+    return WeeklyComparison(
+        current=_weekly_stats(db, current_start, current_end),
+        previous=_weekly_stats(db, previous_start, previous_end),
+    )
 
 
 def _engagement(likes, comments, shares, saves, views) -> Optional[float]:
@@ -373,6 +441,7 @@ def network_screen_summary(
     db: Session = Depends(get_db),
 ):
     now = datetime.now(timezone.utc)
+    weekly = _weekly_comparison(db, now)
     cur_year, cur_month = now.year, now.month
 
     # Prior month
@@ -417,6 +486,14 @@ def network_screen_summary(
         prior_start = prior_end - dt.timedelta(days=30)
         current = _compute_month_stats(db, cur_year, cur_month, now, current_start, current_end)
         prior = _compute_month_stats(db, prev_year, prev_month, now, prior_start, prior_end)
+    # Week metrics are always rolling seven-day windows, independent of the
+    # selected month/30-day comparison mode.
+    current.posts_weekly = weekly.current.posts
+    current.total_views_weekly = weekly.current.views
+    current.new_followers_weekly = weekly.current.new_followers
+    prior.posts_weekly = weekly.previous.posts
+    prior.total_views_weekly = weekly.previous.views
+    prior.new_followers_weekly = weekly.previous.new_followers
     ratios = _compute_ratios(current)
 
     instagram = PlatformSummary(
@@ -446,7 +523,11 @@ def network_screen_summary(
         platforms_total=len(platforms),
     )
 
-    return NetworkScreenSummary(platforms=platforms, aggregate=aggregate)
+    return NetworkScreenSummary(
+        platforms=platforms,
+        aggregate=aggregate,
+        weekly_comparison=weekly,
+    )
 
 
 @router.get("/top-posts", response_model=list[TopPost])

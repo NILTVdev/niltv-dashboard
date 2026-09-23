@@ -390,9 +390,23 @@ export interface NetworkScreenAggregate {
   platforms_total: number;
 }
 
+export interface NetworkScreenWeeklyStats {
+  start: string;
+  end: string;
+  posts: number;
+  views: number;
+  new_followers: number | null;
+}
+
+export interface NetworkScreenWeeklyComparison {
+  current: NetworkScreenWeeklyStats;
+  previous: NetworkScreenWeeklyStats;
+}
+
 export interface NetworkScreenSummary {
   platforms: NetworkScreenPlatform[];
   aggregate: NetworkScreenAggregate;
+  weekly_comparison?: NetworkScreenWeeklyComparison;
 }
 
 export interface NetworkScreenTopPost {
@@ -432,6 +446,19 @@ export interface CampusChannelSummary {
   views_by_source: Record<string, number>;
   latest_post_at: string | null;
   bd_only: boolean;
+  monthly_growth?: CampusChannelViewGrowth[];
+  last_30_days_growth?: CampusChannelViewGrowth;
+  last_7_days_growth?: CampusChannelViewGrowth;
+}
+
+export interface CampusChannelViewGrowth {
+  start: string;
+  end: string;
+  views_gained: number | null;
+  posts_measured: number;
+  posts_missing_baseline: number;
+  regressed_posts: number;
+  coverage_pct: number;
 }
 
 export interface CampusChannelWindowRange {

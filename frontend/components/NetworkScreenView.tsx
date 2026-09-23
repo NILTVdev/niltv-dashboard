@@ -11,6 +11,7 @@ import type {
   NetworkScreenTopPost,
   NetworkScreenRatios,
   NetworkScreenFormatStats,
+  NetworkScreenWeeklyComparison,
 } from "@/lib/types";
 import { FORMAT_LABELS, formatLabel } from "@/lib/formatLabels";
 import { fmt, fmtDate } from "@/lib/utils";
@@ -96,6 +97,42 @@ function CompareRow({
         {d.text}
       </span>
     </div>
+  );
+}
+
+function weekRangeLabel(start: string, end: string): string {
+  const first = new Date(start);
+  const last = new Date(new Date(end).getTime() - 86_400_000);
+  const format = (date: Date) => date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+  return `${format(first)}–${format(last)}`;
+}
+
+function WeeklyPulse({ weekly }: { weekly: NetworkScreenWeeklyComparison }) {
+  const currentLabel = `Last 7 days · ${weekRangeLabel(weekly.current.start, weekly.current.end)}`;
+  const previousLabel = `Previous 7 · ${weekRangeLabel(weekly.previous.start, weekly.previous.end)}`;
+  return (
+    <Section title="Weekly Pulse">
+      <p className="text-xs text-[#64748b] mb-4">
+        Always compares the latest seven calendar days, including today, with the seven days immediately before them. This does not change with the month comparison selector.
+      </p>
+      <div className="overflow-x-auto">
+        <div className="min-w-[31rem]">
+          <div className="grid grid-cols-[minmax(12rem,1fr)_7rem_7rem_5rem] gap-2 text-xs text-[#94a3b8] mb-1">
+            <span />
+            <span className="text-right font-medium text-[#475569]">{currentLabel}</span>
+            <span className="text-right">{previousLabel}</span>
+            <span className="text-right">Change</span>
+          </div>
+          <CompareRow label="New Followers" current={weekly.current.new_followers} prior={weekly.previous.new_followers} />
+          <CompareRow label="Posts Published" current={weekly.current.posts} prior={weekly.previous.posts} />
+          <CompareRow label="Views on Published Posts" current={weekly.current.views} prior={weekly.previous.views} />
+        </div>
+      </div>
+    </Section>
   );
 }
 
@@ -308,12 +345,14 @@ function PlatformDetail({
   current,
   prior,
   mode,
+  weekly,
 }: {
   platform: string;
   ratios: NetworkScreenRatios | null;
   current: NetworkScreenMonthStats | null;
   prior: NetworkScreenMonthStats | null;
   mode: "month" | "mtd" | "rolling30" | "prevmonth";
+  weekly?: NetworkScreenWeeklyComparison;
 }) {
   if (!current) {
     return (
@@ -364,9 +403,9 @@ function PlatformDetail({
           </h3>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <RatioCard
-              label="Weekly Views / Followers"
+              label="Last 7 Days Views / Followers"
               value={ratios.weekly_views_to_followers != null ? `${ratios.weekly_views_to_followers}×` : "—"}
-              description="Reach beyond follower base each week"
+              description="Published-post views over the latest 7 days"
             />
             <RatioCard
               label="Views per Post / Followers"
@@ -387,6 +426,8 @@ function PlatformDetail({
         </div>
       )}
 
+      {weekly && <WeeklyPulse weekly={weekly} />}
+
       {/* Month comparison */}
       <Section title={`${periodLabel} Comparison`}>
         <div className="overflow-x-auto">
@@ -399,12 +440,9 @@ function PlatformDetail({
             </div>
             <CompareRow label="Followers" current={current.followers} prior={prior?.followers ?? null} />
             <CompareRow label={`New Followers (${periodLabel.toLowerCase()})`} current={current.new_followers_monthly} prior={prior?.new_followers_monthly ?? null} />
-            <CompareRow label="New Followers (week)" current={current.new_followers_weekly} prior={prior?.new_followers_weekly ?? null} />
             <CompareRow label={`Posts Published (${periodLabel.toLowerCase()})`} current={current.posts_monthly} prior={prior?.posts_monthly ?? null} />
-            <CompareRow label="Posts Published (week)" current={current.posts_weekly} prior={prior?.posts_weekly ?? null} />
             <CompareRow label="Avg Posts / Week (4-wk)" current={current.avg_posts_per_week} prior={prior?.avg_posts_per_week ?? null} />
             <CompareRow label={`Total Views (${periodLabel.toLowerCase()})`} current={current.total_views_monthly} prior={prior?.total_views_monthly ?? null} />
-            <CompareRow label="Total Views (week)" current={current.total_views_weekly} prior={prior?.total_views_weekly ?? null} />
             <CompareRow label="Avg Views / Post" current={current.avg_views_per_post} prior={prior?.avg_views_per_post ?? null} />
             <CompareRow label="Engagement Rate %" current={current.engagement_rate_overall} prior={prior?.engagement_rate_overall ?? null} isPercent />
             <CompareRow label={`Collabs Published (${periodLabel.toLowerCase()})`} current={current.collabs_published_monthly} prior={prior?.collabs_published_monthly ?? null} />
@@ -522,6 +560,7 @@ export default function NetworkScreenView({
           current={activePlatformData?.current_month ?? null}
           prior={activePlatformData?.prior_month ?? null}
           mode={comparisonMode}
+          weekly={summary.weekly_comparison}
         />
       </div>
 
