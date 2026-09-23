@@ -7,9 +7,9 @@ posts are the rows whose `collab_accounts` list carries that channel's internal
 account key — NOT rows whose `account_username` matches, which is the ORIGINAL
 poster (an athlete's handle on a collab).
 
-Windows are cut on `publish_time`: they count views on posts PUBLISHED in the
-window, not views accrued during it. Per-post snapshot deltas would answer the
-latter, but snapshot coverage is uneven, so they are deliberately out of scope.
+The primary table cuts windows on `publish_time`. Separate growth analytics use
+per-post snapshots to measure views accrued between boundaries and report their
+coverage when an older post lacks a usable starting snapshot.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 
 from backend.auth import require_api_key
 from backend.database import get_db
-from backend.models import NiltvNetworkPost
+from backend.models import NiltvNetworkPost, NiltvNetworkPostSnapshot
 
 router = APIRouter(dependencies=[Depends(require_api_key)])
 
@@ -56,6 +56,16 @@ class WindowStats(BaseModel):
     posts_with_views: int
 
 
+class ViewGrowth(BaseModel):
+    start: datetime
+    end: datetime
+    views_gained: Optional[int]
+    posts_measured: int
+    posts_missing_baseline: int
+    regressed_posts: int
+    coverage_pct: float
+
+
 class ChannelSummary(BaseModel):
     channel: str
     label: str
@@ -66,6 +76,9 @@ class ChannelSummary(BaseModel):
     views_by_source: dict[str, int]
     latest_post_at: Optional[datetime]
     bd_only: bool
+    monthly_growth: list[ViewGrowth]
+    last_30_days_growth: ViewGrowth
+    last_7_days_growth: ViewGrowth
 
 
 class WindowRange(BaseModel):
@@ -129,6 +142,89 @@ def _window(rows: list[tuple[Optional[int], Optional[datetime]]],
     )
 
 
+def _as_utc(value: Optional[datetime]) -> Optional[datetime]:
+    if value is None:
+        return None
+    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+
+
+def _latest_capture(
+    captures: list[tuple[datetime, int]],
+    boundary: datetime,
+) -> Optional[int]:
+    value = None
+    for captured_at, views in captures:
+        if captured_at > boundary:
+            break
+        value = views
+    return value
+
+
+def _growth(
+    posts: list[NiltvNetworkPost],
+    captures_by_post: dict[int, list[tuple[datetime, int]]],
+    start: datetime,
+    end: datetime,
+    now: datetime,
+) -> ViewGrowth:
+    measured = 0
+    missing_baseline = 0
+    regressed = 0
+    total_growth = 0
+
+    for post in posts:
+        published = _as_utc(post.publish_time)
+        if published is None or published >= end:
+            continue
+
+        captures = captures_by_post.get(post.id, [])
+        end_views = (
+            post.views
+            if end >= now and post.views is not None
+            else _latest_capture(captures, end)
+        )
+        if end_views is None:
+            continue
+
+        start_views = _latest_capture(captures, start)
+        if start_views is None:
+            if published >= start:
+                start_views = 0
+            else:
+                missing_baseline += 1
+                continue
+
+        delta = int(end_views) - int(start_views)
+        if delta < 0:
+            regressed += 1
+            delta = 0
+        total_growth += delta
+        measured += 1
+
+    eligible = measured + missing_baseline
+    return ViewGrowth(
+        start=start,
+        end=end,
+        views_gained=total_growth if measured else None,
+        posts_measured=measured,
+        posts_missing_baseline=missing_baseline,
+        regressed_posts=regressed,
+        coverage_pct=round(measured / eligible * 100, 1) if eligible else 0.0,
+    )
+
+
+def _monthly_ranges(now: datetime, count: int = 6) -> list[tuple[datetime, datetime]]:
+    ranges: list[tuple[datetime, datetime]] = []
+    year, month = now.year, now.month
+    for offset in range(count - 1, -1, -1):
+        y, m = year, month
+        for _ in range(offset):
+            y, m = (y - 1, 12) if m == 1 else (y, m - 1)
+        start, calendar_end = _month_bounds(y, m)
+        ranges.append((start, min(calendar_end, now)))
+    return ranges
+
+
 # ── Endpoint ──────────────────────────────────────────────────────────────────
 
 @router.get("/summary", response_model=CampusChannelsSummary)
@@ -143,15 +239,42 @@ def campus_channels_summary(db: Session = Depends(get_db)) -> CampusChannelsSumm
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     rolling_end = today_start + timedelta(days=1)
     rolling_start = rolling_end - timedelta(days=30)
+    growth_30_start = now - timedelta(days=30)
+    growth_7_start = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=6)
+    monthly_ranges = _monthly_ranges(now)
 
     channels: list[ChannelSummary] = []
     for channel, label in CAMPUS_CHANNELS:
-        rows = (
-            db.query(NiltvNetworkPost.views, NiltvNetworkPost.publish_time)
+        posts = (
+            db.query(NiltvNetworkPost)
             .filter(_channel_match(channel))
             .all()
         )
-        rows = [(r[0], r[1]) for r in rows]
+        rows = [(post.views, post.publish_time) for post in posts]
+
+        post_ids = [post.id for post in posts]
+        snapshot_rows = (
+            db.query(
+                NiltvNetworkPostSnapshot.network_post_id,
+                NiltvNetworkPostSnapshot.captured_at,
+                NiltvNetworkPostSnapshot.views,
+            )
+            .filter(
+                NiltvNetworkPostSnapshot.network_post_id.in_(post_ids),
+                NiltvNetworkPostSnapshot.views.isnot(None),
+            )
+            .order_by(
+                NiltvNetworkPostSnapshot.network_post_id,
+                NiltvNetworkPostSnapshot.captured_at,
+            )
+            .all()
+            if post_ids else []
+        )
+        captures_by_post: dict[int, list[tuple[datetime, int]]] = {}
+        for post_id, captured_at, views in snapshot_rows:
+            captured = _as_utc(captured_at)
+            if captured is not None:
+                captures_by_post.setdefault(int(post_id), []).append((captured, int(views)))
 
         source_rows = (
             db.query(
@@ -179,6 +302,12 @@ def campus_channels_summary(db: Session = Depends(get_db)) -> CampusChannelsSumm
             views_by_source={str(src): int(count) for src, count in source_rows},
             latest_post_at=latest,
             bd_only=channel in BD_ONLY_CHANNELS,
+            monthly_growth=[
+                _growth(posts, captures_by_post, start, end, now)
+                for start, end in monthly_ranges
+            ],
+            last_30_days_growth=_growth(posts, captures_by_post, growth_30_start, now, now),
+            last_7_days_growth=_growth(posts, captures_by_post, growth_7_start, now, now),
         ))
 
     return CampusChannelsSummary(

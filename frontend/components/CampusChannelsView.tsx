@@ -1,10 +1,24 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowUpDown, Eye, FileText, Info, TriangleAlert, Users } from "lucide-react";
+import { ArrowUpDown, Eye, FileText, Info, TrendingUp, TriangleAlert, Users } from "lucide-react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import type {
   CampusChannelsSummary,
   CampusChannelSummary,
+  CampusChannelViewGrowth,
   CampusChannelWindowStats,
 } from "@/lib/types";
 import { fmt, fmtDate } from "@/lib/utils";
@@ -17,6 +31,16 @@ type SortKey = WindowKey | "channel";
 // Views written by Business Discovery or a public grid snapshot are a play
 // count, not the Graph/Business Suite views metric — worth flagging in the UI.
 const LOW_CONFIDENCE_SOURCES = ["bd", "public", "unknown"];
+const CHANNEL_COLORS: Record<string, string> = {
+  truebluetv: "#003087",
+  chapelhilltv: "#7BAFD4",
+  redpacktv: "#CC0000",
+  starkvilletv: "#5D1725",
+  goldendometv: "#C99700",
+  dorecitytv: "#866D4B",
+  collegestationtv: "#500000",
+  brazostv: "#154734",
+};
 
 function stats(channel: CampusChannelSummary, key: WindowKey): CampusChannelWindowStats {
   return channel[key];
@@ -66,6 +90,38 @@ function ViewsCell({ data }: { data: CampusChannelWindowStats }) {
       </div>
     </td>
   );
+}
+
+function GrowthValue({ data }: { data: CampusChannelViewGrowth }) {
+  const eligible = data.posts_measured + data.posts_missing_baseline;
+  return (
+    <div className="text-right">
+      <div className="font-semibold text-[#0f172a] tabular-nums">
+        {data.views_gained == null ? "—" : `+${fmt(data.views_gained)}`}
+      </div>
+      <div className="text-[10px] text-[#94a3b8] tabular-nums">
+        {eligible === 0 ? "no eligible posts" : `${data.coverage_pct}% coverage`}
+      </div>
+    </div>
+  );
+}
+
+const EMPTY_GROWTH: CampusChannelViewGrowth = {
+  start: "",
+  end: "",
+  views_gained: null,
+  posts_measured: 0,
+  posts_missing_baseline: 0,
+  regressed_posts: 0,
+  coverage_pct: 0,
+};
+
+function monthGrowthLabel(start: string): string {
+  return new Date(start).toLocaleDateString("en-US", {
+    month: "short",
+    year: "2-digit",
+    timeZone: "UTC",
+  });
 }
 
 function SortHeader({
@@ -158,6 +214,28 @@ export default function CampusChannelsView({ summary }: { summary: CampusChannel
     });
     return rows;
   }, [summary, sortField, sortDir]);
+
+  const monthlyChartData = useMemo(() => {
+    if (!summary?.channels.length) return [];
+    return (summary.channels[0].monthly_growth ?? []).map((period, index) => {
+      const point: Record<string, string | number | null> = {
+        period: monthGrowthLabel(period.start),
+      };
+      for (const channel of summary.channels) {
+        point[channel.channel] = channel.monthly_growth?.[index]?.views_gained ?? null;
+      }
+      return point;
+    });
+  }, [summary]);
+
+  const weeklyChartData = useMemo(() => {
+    if (!summary) return [];
+    return summary.channels.map((channel) => ({
+      channel: channel.label,
+      key: channel.channel,
+      views: channel.last_7_days_growth?.views_gained ?? null,
+    }));
+  }, [summary]);
 
   if (!summary) {
     return (
@@ -297,6 +375,132 @@ export default function CampusChannelsView({ summary }: { summary: CampusChannel
           <div className="text-[11px] text-[#94a3b8]">
             Dashes mean no view data was ingested for that window, which is different from zero views.
           </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm p-6">
+        <div className="flex items-start justify-between flex-wrap gap-3 mb-5">
+          <div>
+            <h2 className="text-sm font-semibold text-[#0f172a] flex items-center gap-1.5">
+              <TrendingUp size={15} style={{ color: GOLD }} />
+              Views Gained by Month
+            </h2>
+            <p className="text-xs text-[#64748b] mt-1">
+              Change in total post views between each month&apos;s opening and closing snapshots, including older posts that kept gaining views.
+            </p>
+          </div>
+          <span className="text-[11px] text-[#94a3b8]">Latest 6 months · current month is month-to-date</span>
+        </div>
+
+        <div className="h-80 mb-6">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={monthlyChartData} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="period" tick={{ fontSize: 11, fill: "#64748b" }} />
+              <YAxis tickFormatter={(value) => fmt(Number(value))} tick={{ fontSize: 11, fill: "#64748b" }} width={52} />
+              <Tooltip formatter={(value) => [value == null ? "—" : fmt(Number(value)), "Views gained"]} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              {summary.channels.map((channel) => (
+                <Line
+                  key={channel.channel}
+                  type="monotone"
+                  dataKey={channel.channel}
+                  name={channel.label}
+                  stroke={CHANNEL_COLORS[channel.channel] ?? GOLD}
+                  strokeWidth={2}
+                  dot={{ r: 2 }}
+                  connectNulls={false}
+                />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[52rem]">
+            <thead>
+              <tr className="border-b border-[#e2e8f0] text-[#64748b]">
+                <th className="py-2 pr-4 text-left font-medium">Channel</th>
+                <th className="py-2 pr-4 text-right font-medium">
+                  <span className="flex flex-col leading-tight">
+                    <span>Last 30 Days</span>
+                    <span className="text-[10px] font-normal text-[#94a3b8]">rolling delta</span>
+                  </span>
+                </th>
+                {(summary.channels[0]?.monthly_growth ?? []).map((period) => (
+                  <th key={period.start} className="py-2 pr-4 text-right font-medium">
+                    {monthGrowthLabel(period.start)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {summary.channels.map((channel) => (
+                <tr key={channel.channel} className="border-b border-[#f1f5f9] last:border-0">
+                  <td className="py-3 pr-4 font-medium text-[#0f172a]">{channel.label}</td>
+                  <td className="py-3 pr-4 align-top">
+                    <GrowthValue data={channel.last_30_days_growth ?? EMPTY_GROWTH} />
+                  </td>
+                  {(channel.monthly_growth ?? []).map((period) => (
+                    <td key={period.start} className="py-3 pr-4 align-top">
+                      <GrowthValue data={period} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm p-6">
+        <div className="mb-5">
+          <h2 className="text-sm font-semibold text-[#0f172a] flex items-center gap-1.5">
+            <TrendingUp size={15} style={{ color: GOLD }} />
+            Views Gained · Last 7 Days
+          </h2>
+          <p className="text-xs text-[#64748b] mt-1">
+            Snapshot-to-current growth across every tracked post, not only posts published this week.
+          </p>
+        </div>
+
+        <div className="grid lg:grid-cols-[minmax(0,1.35fr)_minmax(20rem,0.65fr)] gap-6 items-start">
+          <div className="h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={weeklyChartData} margin={{ top: 8, right: 12, left: 4, bottom: 52 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="channel" angle={-35} textAnchor="end" interval={0} tick={{ fontSize: 10, fill: "#64748b" }} />
+                <YAxis tickFormatter={(value) => fmt(Number(value))} tick={{ fontSize: 11, fill: "#64748b" }} width={52} />
+                <Tooltip formatter={(value) => [value == null ? "—" : fmt(Number(value)), "Views gained"]} />
+                <Bar dataKey="views" radius={[3, 3, 0, 0]}>
+                  {weeklyChartData.map((point) => (
+                    <Cell key={point.key} fill={CHANNEL_COLORS[point.key] ?? GOLD} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="divide-y divide-[#f1f5f9]">
+            {summary.channels.map((channel) => (
+              <div key={channel.channel} className="grid grid-cols-[1fr_auto] gap-3 py-2.5 first:pt-0">
+                <div>
+                  <div className="text-sm font-medium text-[#0f172a]">{channel.label}</div>
+                  <div className="text-[10px] text-[#94a3b8]">
+                    {channel.last_7_days_growth?.posts_measured ?? 0} measured · {channel.last_7_days_growth?.coverage_pct ?? 0}% coverage
+                  </div>
+                </div>
+                <GrowthValue data={channel.last_7_days_growth ?? EMPTY_GROWTH} />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-5 pt-4 border-t border-[#f1f5f9] text-xs text-[#64748b] flex items-start gap-1.5">
+          <Info size={12} className="mt-0.5 shrink-0" style={{ color: GOLD }} />
+          <span>
+            Growth uses the latest available snapshot at each boundary. Older posts without a start snapshot are excluded and lower coverage is shown; negative source regressions are counted but contribute zero growth.
+          </span>
         </div>
       </div>
     </main>
