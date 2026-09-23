@@ -16,6 +16,9 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Deploy secrets (EC2_HOST, EC2_SSH_KEY and the optional values below) live on
+    # the ec2-deploy environment, which only the dev and main branches can use.
+    environment: ec2-deploy
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.2.5
@@ -57,7 +60,7 @@ jobs:
             git reset --hard "origin/$BRANCH"
 
             echo "==> Runtime-only config (never in git)..."
-            # Values held as repository secrets are upserted into .env when set: the
+            # Values held as ec2-deploy environment secrets are upserted into .env when set: the
             # valuation rate card, and the dashboard login / API key per environment
             # (rotate by changing the secret and redeploying).
             if [ "$BRANCH" = "dev" ]; then ENV_SUFFIX=DEV; else ENV_SUFFIX=PROD; fi

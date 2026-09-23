@@ -210,9 +210,9 @@ Every commit is scanned for secret-shaped strings, locally and in CI.
 1. Install gitleaks once: `go install github.com/zricethezav/gitleaks/v8@v8.24.3` (or `brew install gitleaks`).
 2. Point git at the repo's hooks once per clone: `git config core.hooksPath .githooks`.
 
-The `Checks` workflow runs the same scan over the full history on every pull request and every push to `main`. Real credentials live in an ignored `.env` file or in GitHub Actions secrets, never in the tree. If one ever lands in a commit, rotate it first, then rewrite history.
+The `Checks` workflow runs the same scan over the full history on every pull request and every push to `main`. Real credentials live in an ignored `.env` file or in the `ec2-deploy` environment's secrets, which only the dev and main branches can use, never in the tree. If one ever lands in a commit, rotate it first, then rewrite history.
 
-Maintainer clones and CI also run a supplementary scan from a private rule file.
+Maintainer clones also run a supplementary scan from a private rule file in their pre-commit hook.
 
 ## License
 
