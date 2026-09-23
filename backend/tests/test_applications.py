@@ -207,9 +207,21 @@ def test_approve_without_docusign_records_error_and_stays_approved(db, fakes, mo
 def test_resend_agreement_reuses_envelope(db, fakes):
     app = _apply(db)
     client.post(f"/api/applications/{app.id}/approve", headers=AUTH)
+    db.refresh(app)
+    first_sent = app.agreement_sent_at
+    app.docusign_status = "delivered"          # athlete opened it, never signed
+    db.commit()
     r = client.post(f"/api/applications/{app.id}/resend-agreement", headers=AUTH)
     assert r.status_code == 200 and r.json()["mode"] == "docusign-resend"
     assert fakes["resent"] == ["env-123"] and len(fakes["envelopes"]) == 1
+    db.refresh(app)
+    assert app.agreement_sent_at == first_sent          # the first send date is kept
+    assert app.agreement_reminded_at is not None and app.agreement_reminded_at >= first_sent
+    assert app.docusign_status == "sent"                # DocuSign resets the recipient on resend
+    body = r.json()["application"]
+    assert body["agreement_reminded_at"]
+    agreement = next(s for s in body["progress"] if s["key"] == "agreement")
+    assert "reminded" in agreement["detail"]
 
 
 def test_decline_with_reason(db, fakes):
