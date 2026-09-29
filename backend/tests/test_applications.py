@@ -436,7 +436,7 @@ def test_email_layout_is_branded(secrets):
     assert "niltv-logo-email.png" in out and 'alt="NIL TV"' in out
     assert "<p>Hi <b>x</b></p>" in out                      # body html passes through
     assert "A &lt;b&gt;pre&lt;/b&gt;" in out                # preheader is escaped
-    assert "/contact/" in out and "Durham" in out
+    assert "/contact/" in out
 
 
 def test_create_envelope_sets_reply_to(monkeypatch, secrets):

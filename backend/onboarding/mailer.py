@@ -48,7 +48,7 @@ def _layout(inner: str, preheader: str = "") -> str:
         '<tr><td style="background:#ffffff;padding:30px 32px 26px;border-radius:0 0 14px 14px;'
         f'border:1px solid #e6e0d2;border-top:0;{_WRAP}">{inner}</td></tr>'
         '<tr><td align="center" style="padding:18px 8px 0;font-family:Inter,Arial,sans-serif;font-size:12px;'
-        'line-height:1.6;color:#7a7368">NIL TV, Durham, North Carolina<br>'
+        'line-height:1.6;color:#7a7368">NIL TV<br>'
         f'<a href="{site}/contact/" style="color:#7a7368">Contact NIL TV</a> &middot; '
         f'<a href="{site}/" style="color:#7a7368">niltv.com</a></td></tr>'
         '</table></td></tr></table></body></html>'
