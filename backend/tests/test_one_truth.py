@@ -28,6 +28,7 @@ from backend.jobs.import_niltv_network import (
     upsert_posts,
 )
 from backend.main import app
+from backend.tests._staff import staff_headers
 from backend.models import (
     Ambassador,
     AmbassadorSnapshot,
@@ -37,7 +38,7 @@ from backend.models import (
 )
 
 client = TestClient(app)
-AUTH = {"X-API-Key": "test"}
+AUTH = staff_headers("admin")  # X-API-Key + a signed-in admin user
 T0 = datetime(2026, 9, 10, 1, 45, tzinfo=timezone.utc)
 T1 = datetime(2026, 9, 10, 14, 35, tzinfo=timezone.utc)   # same UTC day, later
 T2 = datetime(2026, 9, 11, 1, 45, tzinfo=timezone.utc)

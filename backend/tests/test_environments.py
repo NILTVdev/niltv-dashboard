@@ -2,7 +2,8 @@
 backend/jobs/base.py):
 
 * ENVIRONMENT=local bypasses X-API-Key, but only with a local database;
-* dev and production require the key (DASHBOARD_API_KEY, else the password);
+* dev and production require the key (DASHBOARD_API_KEY, else the password)
+  and a signed-in dashboard user;
 * side effects (S3/SNS/CloudWatch) are production-only unless ALLOW_SIDE_EFFECTS;
 * the migration runner records what it applied.
 Runs in CI against the seeded Postgres (ENVIRONMENT=dev there).
@@ -14,6 +15,7 @@ from fastapi.testclient import TestClient
 from backend import auth as auth_module
 from backend.config import Settings, get_settings
 from backend.main import app
+from backend.tests._staff import staff_headers
 
 client = TestClient(app)
 BASE = dict(db_pass="x", ig_access_token="x", ig_business_id="x", dashboard_password="secret")
@@ -54,7 +56,9 @@ def test_api_key_dependency_follows_the_environment(monkeypatch):
     # CI runs as dev: the key is enforced.
     assert client.get("/api/brand/accounts").status_code == 401
     assert client.get("/api/brand/accounts", headers={"X-API-Key": "wrong"}).status_code == 401
-    assert client.get("/api/brand/accounts", headers={"X-API-Key": get_settings().api_key}).status_code == 200
+    # The right key alone is not enough: a signed-in dashboard user is required too.
+    assert client.get("/api/brand/accounts", headers={"X-API-Key": get_settings().api_key}).status_code == 401
+    assert client.get("/api/brand/accounts", headers=staff_headers("viewer")).status_code == 200
 
     # Same app, settings swapped to local: no key needed and /api/health says so.
     local = _settings(environment="local", db_host="localhost")

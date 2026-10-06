@@ -20,11 +20,11 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from backend.auth import require_api_key
+from backend.auth import require_api_key, require_role
 from backend.database import get_db
 from backend.models import NiltvNetworkPost, NiltvNetworkPostSnapshot
 
-router = APIRouter(dependencies=[Depends(require_api_key)])
+router = APIRouter(dependencies=[Depends(require_api_key), Depends(require_role("viewer"))])
 
 # Internal account keys as written into niltv_network_posts.collab_accounts.
 # Note: truebluetv has no underscore here (the IG handle @trueblue_tv does).

@@ -27,9 +27,10 @@ from backend.main import app
 from backend.models import Ambassador, Application, ApplicationEvent
 from backend.onboarding import docusign, mailer, pipeline, stripe_connect
 from backend.routers import applications as apps_router
+from backend.tests._staff import staff_headers
 
 client = TestClient(app)
-AUTH = {"X-API-Key": "test"}  # matches DASHBOARD_PASSWORD in the CI env
+AUTH = staff_headers("onboarding")  # X-API-Key + a signed-in onboarding user
 
 FORM = {
     "email": "Jane.Doe@Example.com",
@@ -186,7 +187,7 @@ def test_approve_sends_envelope(db, fakes):
     body = r.json()
     assert body["status"] == "agreement_sent"
     assert body["docusign_envelope_id"] == "env-123"
-    assert body["reviewed_by"] == "reviewer"
+    assert body["reviewed_by"] == "test-onboarding"   # the signed-in user, not the client-sent "by"
     f = fakes["envelopes"][0]
     assert f.email == "jane.doe@example.com" and f.name == "Jane Doe"
     assert f.school == "Duke University" and f.sport == "Lacrosse" and f.handle == "jane.doe"

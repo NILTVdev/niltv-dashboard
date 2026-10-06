@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from backend.auth import require_api_key
+from backend.auth import require_api_key, require_role
 from backend.database import get_db
 from backend.jobs.ambassadors import attribute_posts, normalize_username
 from backend.models import (
@@ -23,7 +23,7 @@ from backend.models import (
     NiltvNetworkPost,
 )
 
-router = APIRouter(dependencies=[Depends(require_api_key)])
+router = APIRouter(dependencies=[Depends(require_api_key), Depends(require_role("viewer"))])
 
 VALID_STATUSES = ("candidate", "confirmed", "removed")
 
@@ -292,7 +292,7 @@ def _validate_athlete(db: Session, athlete_id: Optional[int]) -> None:
             raise HTTPException(status_code=400, detail=f"athlete_id {athlete_id} does not exist")
 
 
-@router.post("/", response_model=AmbassadorOut)
+@router.post("/", response_model=AmbassadorOut, dependencies=[Depends(require_role("admin"))])
 def add_ambassador(payload: AmbassadorCreate, db: Session = Depends(get_db)):
     """Admin add. Re-adding an existing (e.g. removed) username revives it as
     confirmed rather than erroring — removal is reversible by design."""
@@ -329,7 +329,7 @@ def add_ambassador(payload: AmbassadorCreate, db: Session = Depends(get_db)):
     return _to_out(a)
 
 
-@router.post("/{ambassador_id}/update", response_model=AmbassadorOut)
+@router.post("/{ambassador_id}/update", response_model=AmbassadorOut, dependencies=[Depends(require_role("admin"))])
 def update_ambassador(ambassador_id: int, payload: AmbassadorUpdate, db: Session = Depends(get_db)):
     a = db.query(Ambassador).filter(Ambassador.id == ambassador_id).first()
     if not a:

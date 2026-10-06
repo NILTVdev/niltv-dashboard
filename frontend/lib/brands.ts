@@ -7,6 +7,8 @@
 //   - recharts props can't resolve CSS vars (SVG presentation attributes),
 //     so chart components read hex values from useBrand().colors instead.
 
+import type { Role } from "@/lib/roles";
+
 export type BrandKey = "truebluetv" | "niltv";
 
 export interface BrandColors {
@@ -23,7 +25,8 @@ export interface Brand {
   /** Rendered logo box (px) and the class that makes it sit on the dark bar. */
   logo?: { width: number; height: number; className: string };
   home: string;
-  links: { href: string; label: string }[];
+  /** `role`: the minimum role that sees the link (default: everyone). */
+  links: { href: string; label: string; role?: Role }[];
   colors: BrandColors;
 }
 
@@ -58,7 +61,7 @@ export const BRANDS: Record<BrandKey, Brand> = {
       { href: "/niltv", label: "Network" },
       { href: "/niltv-channels", label: "Channel Insights" },
       { href: "/niltv-campus-channels", label: "Campus Channels" },
-      { href: "/niltv-onboarding", label: "Onboarding" },
+      { href: "/niltv-onboarding", label: "Onboarding", role: "onboarding" },
       { href: "/niltv-web-analytics", label: "Web Analytics" },
     ],
     // Dark network look: near-black primary, brass-gold accent, warm pale.

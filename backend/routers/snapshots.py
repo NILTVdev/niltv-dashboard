@@ -5,11 +5,11 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from backend.auth import require_api_key
+from backend.auth import require_api_key, require_role
 from backend.database import get_db
 from backend.models import AthleteSnapshot
 
-router = APIRouter(dependencies=[Depends(require_api_key)])
+router = APIRouter(dependencies=[Depends(require_api_key), Depends(require_role("viewer"))])
 
 
 class SnapshotOut(BaseModel):

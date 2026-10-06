@@ -10,9 +10,10 @@ from fastapi.testclient import TestClient
 from backend.database import SessionLocal
 from backend.main import app
 from backend.models import BrandAccount, BrandSnapshot
+from backend.tests._staff import staff_headers
 
 client = TestClient(app)
-AUTH = {"X-API-Key": "test"}
+AUTH = staff_headers("admin")  # X-API-Key + a signed-in admin user
 NOW = datetime(2026, 8, 11, 5, 0, tzinfo=timezone.utc)
 
 

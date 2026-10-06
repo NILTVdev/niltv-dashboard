@@ -16,9 +16,10 @@ from backend.jobs import run_manual_channels as job
 from backend.main import app
 from backend.models import BrandAccount, BrandSnapshot, NiltvNetworkPost, NiltvNetworkPostSnapshot
 from backend.sources.instagram import IGPost, IGProfile
+from backend.tests._staff import staff_headers
 
 client = TestClient(app)
-AUTH = {"X-API-Key": "test"}
+AUTH = staff_headers("admin")  # X-API-Key + a signed-in admin user
 OWNED_ID = "18000000000000101"
 SC = "DcTest0001"
 

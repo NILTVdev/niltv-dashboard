@@ -8,14 +8,14 @@ from pydantic import BaseModel
 from sqlalchemy import func as sqlfunc
 from sqlalchemy.orm import Session
 
-from backend.auth import require_api_key
+from backend.auth import require_api_key, require_role
 from backend.brand_registry import get_brand_targets
 from backend.database import get_db
 from backend.models import BrandAccount, BrandPost, BrandSnapshot, NiltvNetworkPost, NiltvNetworkPostSnapshot
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(dependencies=[Depends(require_api_key)])
+router = APIRouter(dependencies=[Depends(require_api_key), Depends(require_role("viewer"))])
 
 
 class BrandSnapshotOut(BaseModel):
@@ -169,7 +169,7 @@ def niltv_network_summary(db: Session = Depends(get_db)):
     }
 
 
-@router.post("/network/upload-csv")
+@router.post("/network/upload-csv", dependencies=[Depends(require_role("admin"))])
 async def upload_niltv_network_csv(
     file: UploadFile = File(...),
     account: Optional[str] = Query(
@@ -342,7 +342,7 @@ def list_brand_accounts(db: Session = Depends(get_db)):
     return _registry_out(db)
 
 
-@router.post("/accounts/{account}/update", response_model=BrandAccountOut)
+@router.post("/accounts/{account}/update", response_model=BrandAccountOut, dependencies=[Depends(require_role("admin"))])
 def update_brand_account(account: str, payload: BrandAccountUpdate, db: Session = Depends(get_db)):
     row = db.query(BrandAccount).filter(BrandAccount.account == account).first()
     if not row:
@@ -362,7 +362,7 @@ def update_brand_account(account: str, payload: BrandAccountUpdate, db: Session 
     return next(e for e in _registry_out(db) if e.account == account)
 
 
-@router.post("/accounts/{account}/verify")
+@router.post("/accounts/{account}/verify", dependencies=[Depends(require_role("admin"))])
 def verify_brand_account(account: str, db: Session = Depends(get_db)):
     """Live check: fetch the account's profile with its stored token, exactly
     as the nightly job would. Diagnoses failing channels without server access."""

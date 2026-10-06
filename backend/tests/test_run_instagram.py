@@ -19,9 +19,10 @@ from backend.jobs import run_instagram as job
 from backend.main import app
 from backend.models import Athlete, AthletePost, AthletePostSnapshot, AthleteSnapshot, BrandAccount, BrandSnapshot
 from backend.sources.instagram import IGPost, IGProfile
+from backend.tests._staff import staff_headers
 
 client = TestClient(app)
-AUTH = {"X-API-Key": "test"}
+AUTH = staff_headers("admin")  # X-API-Key + a signed-in admin user
 HANDLES = ["ig_dl_alpha", "ig_dl_bravo", "ig_dl_charlie"]
 _parked: list[int] = []   # other active athletes set inactive for the run, restored by _clean
 

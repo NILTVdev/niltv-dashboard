@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func as sqlfunc, text
 from sqlalchemy.orm import Session
 
-from backend.auth import require_api_key
+from backend.auth import require_api_key, require_role
 from backend.database import get_db
 from backend.models import (
     NiltvNetworkPost, GSCDailyTotal, GSCQuerySnapshot, GSCPageSnapshot,
@@ -16,7 +16,7 @@ from backend.models import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(dependencies=[Depends(require_api_key)])
+router = APIRouter(dependencies=[Depends(require_api_key), Depends(require_role("admin"))])
 
 # The TrueBlueTV weekly/monthly reports read the shared network table filtered on
 # the truebluetv channel tag (migration 026 merged trueblue_network_posts into it).

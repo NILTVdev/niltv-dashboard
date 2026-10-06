@@ -15,7 +15,8 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000). With the local preset the
-login page is skipped; otherwise log in with `DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD`.
+login page is skipped; otherwise sign in with your own dashboard account (see
+"Dashboard accounts and roles" in the root README).
 
 The frontend never talks to the database directly. It only calls the backend
 API over HTTP, so point `INTERNAL_API_URL` at a local backend (`docker compose up`
@@ -34,9 +35,8 @@ commit real values.
 | Variable | Description |
 |---|---|
 | `INTERNAL_API_URL` | Backend API base URL used by server components. `http://localhost:8000` for a local backend, or `https://api-dev.niltv.com` for dev. |
-| `DASHBOARD_USERNAME` | Login username (validated server-side in `app/api/auth/route.ts`). |
-| `DASHBOARD_PASSWORD` | Login password. Also used as the `X-API-Key` when `DASHBOARD_API_KEY` is unset. |
-| `DASHBOARD_API_KEY` | Key the server attaches as `X-API-Key` to backend calls. Must match the backend's `DASHBOARD_API_KEY` (or its `DASHBOARD_PASSWORD` if that is unset). |
+| `DASHBOARD_API_KEY` | Key the server attaches as `X-API-Key` to backend calls; it also verifies the session tokens the backend signs at login. Must match the backend's `DASHBOARD_API_KEY` (or its `DASHBOARD_PASSWORD` if that is unset). |
+| `DASHBOARD_PASSWORD` | Legacy fallback for `DASHBOARD_API_KEY`. It is no longer a login. |
 | `AUTH_DISABLED` | `true` skips the login page and cookie check. Honoured only when `NODE_ENV` is not `production`, i.e. never on Amplify. Pair with a backend running `ENVIRONMENT=local`. |
 
 Ask a maintainer for the dev values.

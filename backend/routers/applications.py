@@ -6,8 +6,9 @@ Two routers on the same prefix (/api/applications):
   (CORS-limited to the site origins), and DocuSign Connect / Stripe post
   their webhooks here (HMAC-verified). Mounted FIRST so ``/webhooks/...``
   is matched before the admin ``/{application_id}`` routes.
-* ``router`` - X-API-Key like every other dashboard route. Roster list,
-  detail with timeline + progress, approve / decline / resend / refresh.
+* ``router`` - X-API-Key plus a signed-in user with the onboarding role (or
+  admin). Roster list, detail with timeline + progress, approve / decline /
+  resend / refresh. Staff actions are recorded under the user's username.
 
 Mutations are POST because the CORS config only allows GET/POST.
 """
@@ -26,7 +27,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
-from backend.auth import require_api_key
+from backend.auth import current_user, require_api_key, require_role
 from backend.database import get_db
 from backend.models import Application
 from backend.onboarding import cognito, docusign, pipeline, schools, stripe_connect
@@ -34,7 +35,7 @@ from backend.onboarding import cognito, docusign, pipeline, schools, stripe_conn
 log = logging.getLogger(__name__)
 
 public_router = APIRouter()
-router = APIRouter(dependencies=[Depends(require_api_key)])
+router = APIRouter(dependencies=[Depends(require_api_key), Depends(require_role("onboarding"))])
 
 # -- Public intake ----------------------------------------------------------
 
@@ -359,10 +360,11 @@ class ReviewIn(BaseModel):
 
 
 @router.post("/{application_id}/approve", response_model=ApplicationDetailOut)
-def approve_application(application_id: int, payload: Optional[ReviewIn] = None, db: Session = Depends(get_db)):
+def approve_application(application_id: int, payload: Optional[ReviewIn] = None, db: Session = Depends(get_db),
+                        user=Depends(current_user)):
     app = _get(db, application_id)
     try:
-        result = pipeline.approve(db, app, by=(payload.by if payload and payload.by else "staff"))
+        result = pipeline.approve(db, app, by=user.username)
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
     db.refresh(app)
@@ -374,11 +376,12 @@ def approve_application(application_id: int, payload: Optional[ReviewIn] = None,
 
 
 @router.post("/{application_id}/decline", response_model=ApplicationDetailOut)
-def decline_application(application_id: int, payload: Optional[ReviewIn] = None, db: Session = Depends(get_db)):
+def decline_application(application_id: int, payload: Optional[ReviewIn] = None, db: Session = Depends(get_db),
+                        user=Depends(current_user)):
     app = _get(db, application_id)
     try:
         pipeline.decline(db, app, reason=(payload.reason if payload else "") or "",
-                         by=(payload.by if payload and payload.by else "staff"),
+                         by=user.username,
                          notify=bool(payload and payload.notify))
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
@@ -434,7 +437,8 @@ class ApplicationUpdate(BaseModel):
 
 
 @router.post("/{application_id}/update", response_model=ApplicationDetailOut)
-def update_application(application_id: int, payload: ApplicationUpdate, db: Session = Depends(get_db)):
+def update_application(application_id: int, payload: ApplicationUpdate, db: Session = Depends(get_db),
+                       user=Depends(current_user)):
     app = _get(db, application_id)
     fields = payload.model_dump(exclude_unset=True)
     if "instagram" in fields:
@@ -446,7 +450,7 @@ def update_application(application_id: int, payload: ApplicationUpdate, db: Sess
     for k, v in fields.items():
         setattr(app, k, v)
     app.updated_at = pipeline.now_utc()
-    pipeline.record(db, app, "note" if list(fields) == ["notes"] else "edited", actor="staff",
+    pipeline.record(db, app, "note" if list(fields) == ["notes"] else "edited", actor=user.username,
                     detail={k: (v if k != "notes" else "…") for k, v in fields.items()})
     db.commit()
     db.refresh(app)

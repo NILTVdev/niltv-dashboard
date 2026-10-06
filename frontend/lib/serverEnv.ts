@@ -3,7 +3,8 @@
  * components). One place decides:
  *   - where the backend is (INTERNAL_API_URL),
  *   - which key the server attaches as X-API-Key (DASHBOARD_API_KEY, falling
- *     back to DASHBOARD_PASSWORD — the historical single-secret setup),
+ *     back to the legacy DASHBOARD_PASSWORD); the same key verifies the
+ *     session tokens the backend signs at login (lib/session.ts),
  *   - whether login is bypassed (AUTH_DISABLED=true, honoured only outside a
  *     production build, so an Amplify deploy can never run open).
  */

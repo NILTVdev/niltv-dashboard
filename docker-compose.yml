@@ -37,8 +37,6 @@ services:
       DB_NAME: niltv_db
       DB_USER: niltv_user
       DB_PASS: niltv
-      DASHBOARD_USERNAME: local
-      DASHBOARD_PASSWORD: local
       # Third-party tokens are never needed to browse the dashboard; the
       # nightly jobs are not scheduled here. Placeholders satisfy Settings.
       IG_ACCESS_TOKEN: local
@@ -68,8 +66,6 @@ services:
       NODE_ENV: development
       AUTH_DISABLED: "true"
       INTERNAL_API_URL: http://api:8000
-      DASHBOARD_USERNAME: local
-      DASHBOARD_PASSWORD: local
     volumes:
       - ./frontend:/app
       - web_node_modules:/app/node_modules

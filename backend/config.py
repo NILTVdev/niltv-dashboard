@@ -95,6 +95,8 @@ class Settings(BaseSettings):
         """Refuse configurations that would be dangerous rather than merely wrong.
 
         * unknown ENVIRONMENT values;
+        * dev or production without an API key (it guards every route and
+          signs the session tokens);
         * ENVIRONMENT=local against a database that is not on this machine —
           the auth bypass must never sit in front of the dev or prod database.
         """
@@ -103,6 +105,9 @@ class Settings(BaseSettings):
         if self.environment not in self.ENVIRONMENTS:
             raise RuntimeError(
                 f"ENVIRONMENT={self.environment!r} is not one of {self.ENVIRONMENTS}")
+        if self.environment != "local" and not self.api_key:
+            raise RuntimeError(
+                f"ENVIRONMENT={self.environment} needs DASHBOARD_API_KEY (or the legacy DASHBOARD_PASSWORD)")
         if self.environment == "local" and self.db_host.strip().lower() not in self.LOCAL_DB_HOSTS:
             raise RuntimeError(
                 f"ENVIRONMENT=local disables API auth, so DB_HOST must be a local database "
@@ -204,13 +209,13 @@ class Settings(BaseSettings):
     aws_region: str = "us-east-1"
 
     # App
-    dashboard_username: str = ""
-    dashboard_password: str
-    # API key the frontend sends as X-API-Key. Empty = the dashboard password
-    # (the historical single-secret setup). Splitting them lets a developer's
-    # .env.local carry a login without holding the key that unlocks the
-    # upload/approve routes on a shared backend.
+    # API key the frontend's server sends as X-API-Key; it also signs the
+    # dashboard session tokens (backend/auth.py). People sign in with their
+    # own dashboard_users account (migration 029); there is no shared login.
     dashboard_api_key: str = ""
+    # LEGACY: the retired shared-login password, still accepted as the API key
+    # when DASHBOARD_API_KEY is unset so existing deploys keep working.
+    dashboard_password: str = ""
     # local | dev | production — see README "Environments".
     #   local:      auth bypassed, no S3/SNS/CloudWatch side effects, docs on;
     #               refuses to start unless the database is on this machine.

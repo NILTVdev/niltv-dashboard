@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isValidSession } from "@/lib/session";
+import { hasRole } from "@/lib/roles";
+import { backendHeaders } from "@/lib/serverSession";
+import { readSession, SESSION_COOKIE } from "@/lib/session";
 
-import { API_KEY, BACKEND_URL as BACKEND } from "@/lib/serverEnv";
+import { BACKEND_URL as BACKEND } from "@/lib/serverEnv";
 
 export async function POST(request: NextRequest) {
-  const token = request.cookies.get("auth_token")?.value;
-  if (!(await isValidSession(token))) {
+  // Admin only; the backend checks the role again.
+  const token = request.cookies.get(SESSION_COOKIE)?.value;
+  const session = await readSession(token);
+  if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!hasRole(session.role, "admin")) {
+    return NextResponse.json({ error: "Requires the admin role" }, { status: 403 });
   }
 
   const formData = await request.formData();
@@ -20,7 +27,7 @@ export async function POST(request: NextRequest) {
 
   const res = await fetch(`${BACKEND}/api/brand/network/upload-csv`, {
     method: "POST",
-    headers: { "X-API-Key": API_KEY },
+    headers: backendHeaders(token),
     body: backendForm,
   });
 

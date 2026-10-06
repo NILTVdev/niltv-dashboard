@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, desc
 from sqlalchemy.orm import Session
 
-from backend.auth import require_api_key
+from backend.auth import require_api_key, require_role
 from backend.database import get_db, SessionLocal
 
 logger = logging.getLogger(__name__)
@@ -15,7 +15,7 @@ from backend.models import (
     GA4DailySnapshot, GSCDailyTotal, GSCQuerySnapshot, GSCPageSnapshot,
 )
 
-router = APIRouter(dependencies=[Depends(require_api_key)])
+router = APIRouter(dependencies=[Depends(require_api_key), Depends(require_role("viewer"))])
 
 
 # ── Pydantic response models ────────────────────────────
@@ -262,7 +262,7 @@ def _run_pull():
         db.close()
 
 
-@router.post("/pull")
+@router.post("/pull", dependencies=[Depends(require_role("admin"))])
 def trigger_pull(background_tasks: BackgroundTasks):
     """Trigger a manual web analytics data pull (runs in background)."""
     background_tasks.add_task(_run_pull)

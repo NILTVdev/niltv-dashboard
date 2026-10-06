@@ -22,10 +22,11 @@ from backend.models import (
     NiltvNetworkPostSnapshot,
 )
 from backend.jobs.ambassadors import campus_from_school, infer_campuses
+from backend.tests._staff import staff_headers
 from scripts.import_ambassador_sheet import import_rows, match_ambassador, parse_count, parse_sheet
 
 client = TestClient(app)
-AUTH = {"X-API-Key": "test"}
+AUTH = staff_headers("admin")  # X-API-Key + a signed-in admin user
 NOW = datetime(2026, 8, 11, 12, 0, tzinfo=timezone.utc)
 
 SHEET = """NAME,SCHOOL,SPORT,YEAR (F26),Insta Followers,TikTok Followers,YouTube Subscribers,M/F,FOLLOWERS,,SCHOOLS

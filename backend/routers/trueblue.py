@@ -8,13 +8,13 @@ from pydantic import BaseModel
 from sqlalchemy import func as sqlfunc, text
 from sqlalchemy.orm import Session
 
-from backend.auth import require_api_key
+from backend.auth import require_api_key, require_role
 from backend.database import get_db
 from backend.models import NiltvNetworkPost, NiltvNetworkPostSnapshot, TrueBluePost, TrueBlueSnapshot
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(dependencies=[Depends(require_api_key)])
+router = APIRouter(dependencies=[Depends(require_api_key), Depends(require_role("viewer"))])
 
 # brand_accounts.account key of the manual TrueBlueTV channel (see the
 # upload-csv endpoint). Must match the registry row and the app's roster.
@@ -306,7 +306,7 @@ def network_metrics_over_time(db: Session = Depends(get_db)):
     ]
 
 
-@router.post("/network/upload-csv")
+@router.post("/network/upload-csv", dependencies=[Depends(require_role("admin"))])
 async def upload_network_csv(file: UploadFile = File(...), db: Session = Depends(get_db)):
     """Accept a Meta Business Suite export of the @trueblue_tv grid and import
     it into the shared network table tagged collab_accounts=truebluetv — the

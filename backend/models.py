@@ -648,3 +648,19 @@ class ApplicationEvent(Base):
     detail = Column(JSON)
 
     application = relationship("Application", back_populates="events")
+
+
+class DashboardUser(Base):
+    """An individual dashboard login (migration 029). role is viewer,
+    onboarding or admin; session_version is bumped on role/password changes so
+    older session tokens stop working."""
+    __tablename__ = "dashboard_users"
+
+    id = Column(Integer, primary_key=True)
+    username = Column(Text, nullable=False, unique=True)
+    password_hash = Column(Text, nullable=False)
+    role = Column(Text, nullable=False)
+    session_version = Column(Integer, nullable=False, default=1)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
+    last_login_at = Column(TIMESTAMP(timezone=True))

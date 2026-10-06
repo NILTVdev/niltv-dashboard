@@ -4,13 +4,14 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { LogOut } from "lucide-react";
+import { LogOut, Settings } from "lucide-react";
 import { useBrand } from "@/components/BrandProvider";
 import { BRANDS, routeForBrand, type BrandKey } from "@/lib/brands";
+import { hasRole, ROLE_LABEL, type SessionUser } from "@/lib/roles";
 
 const BRAND_ORDER: BrandKey[] = ["truebluetv", "niltv"];
 
-export default function Navbar() {
+export default function Navbar({ user }: { user: SessionUser | null }) {
   const pathname = usePathname();
   const router = useRouter();
   const { brand, setBrand } = useBrand();
@@ -51,7 +52,7 @@ export default function Navbar() {
         </Link>
 
         <nav className="flex gap-1 flex-1">
-          {brand.links.map((l) => (
+          {brand.links.filter((l) => !l.role || hasRole(user?.role, l.role)).map((l) => (
             <Link
               key={l.href}
               href={l.href}
@@ -90,6 +91,25 @@ export default function Navbar() {
             </button>
           ))}
         </div>
+
+        {hasRole(user?.role, "admin") && (
+          <Link
+            href="/adminpage"
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+              pathname === "/adminpage" ? "bg-white/20" : "text-white/80 hover:bg-white/10"
+            )}
+          >
+            <Settings size={16} />
+            Admin
+          </Link>
+        )}
+
+        {user && (
+          <span className="hidden md:block text-xs text-white/70 whitespace-nowrap" title={ROLE_LABEL[user.role]}>
+            {user.username}
+          </span>
+        )}
 
         <button
           onClick={handleLogout}

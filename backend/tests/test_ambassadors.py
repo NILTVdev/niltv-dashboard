@@ -23,6 +23,7 @@ from backend.jobs.ambassadors import (
 )
 from backend.jobs.precompute import precompute_ambassador_cache
 from backend.main import app
+from backend.tests._staff import staff_headers
 from backend.models import (
     Ambassador,
     AmbassadorSnapshot,
@@ -33,7 +34,7 @@ from backend.models import (
 )
 
 client = TestClient(app)
-AUTH = {"X-API-Key": "test"}  # matches DASHBOARD_PASSWORD in the CI env
+AUTH = staff_headers("admin")  # X-API-Key + a signed-in admin user
 NOW = datetime(2026, 8, 11, 12, 0, tzinfo=timezone.utc)
 
 

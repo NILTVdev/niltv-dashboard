@@ -390,7 +390,7 @@ function Actions({ row, busy, onRun }: { row: Application; busy: boolean; onRun:
       {(s === "applicant" || s === "declined") && (
         <Btn tone="primary" disabled={busy || row.missing_for_approval.length > 0}
              title={row.missing_for_approval.length ? `Missing: ${row.missing_for_approval.join(", ")}` : "Approve and send the agreement"}
-             onClick={() => onRun("approve", { by: "staff" })}>
+             onClick={() => onRun("approve")}>
           <Check className="h-3.5 w-3.5" /> Approve
         </Btn>
       )}

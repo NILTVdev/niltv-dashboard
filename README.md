@@ -68,7 +68,7 @@ Three tiers, one code path. `ENVIRONMENT` (backend) and `AUTH_DISABLED`
 | | **local** | **dev** | **production** |
 |---|---|---|---|
 | Where | your machine (`docker compose up`) | `dev` branch → dev API + Amplify `dev` branch | `main` → production API + Amplify `main` |
-| Auth | **off** (`ENVIRONMENT=local`, `AUTH_DISABLED=true`) | login + `X-API-Key`, dev-only secrets | login + `X-API-Key` |
+| Auth | **off** (`ENVIRONMENT=local`, `AUTH_DISABLED=true`) | personal login + `X-API-Key`, dev-only secrets | personal login + `X-API-Key` |
 | Data | empty, or loaded with `scripts/seed_local.py` | shared dev data, tokens stripped | live |
 | Nightly jobs | not scheduled | not scheduled; side effects suppressed | scheduled |
 | S3 / SNS / CloudWatch | off | off unless `ALLOW_SIDE_EFFECTS=1` | on |
@@ -94,7 +94,7 @@ production.
    builds the `dev` branch. The build's postBuild step makes the same keyed
    backend call every page makes, so a build that cannot authenticate fails
    in Amplify and the previous build stays live.
-3. **Test on the dev dashboard** with the dev login.
+3. **Test on the dev dashboard** with your dev account.
 4. **Release** with a PR from `dev` into `main`. Merging deploys production the
    same way, with the same verification.
 
@@ -174,16 +174,42 @@ Copy `.env.example` to `.env`
 | `ZOOMPH_API_KEY` / `ZOOMPH_FEED_ID` | Zoomph access token + feed ID |
 | `AWS_S3_BUCKET` | S3 bucket name for JSON backups |
 | `AWS_SNS_TOPIC_ARN` | SNS topic ARN for failure email alerts |
-| `DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD` | Dashboard login (password also acts as the API key) |
+| `DASHBOARD_API_KEY` | Key the dashboard's server sends as `X-API-Key`; also signs session tokens. `DASHBOARD_PASSWORD` is still read as a fallback for existing deploys, but it is no longer a login |
 
 Frontend-only contributors don't need the third-party tokens — placeholder values
 are fine to boot a local backend if you aren't exercising that integration.
 
-The frontend reads `INTERNAL_API_URL`, `DASHBOARD_USERNAME`, `DASHBOARD_PASSWORD`
-and (optionally) `DASHBOARD_API_KEY` from `frontend/.env.local` on your machine
-and from the Amplify branch settings on dev and prod. `DASHBOARD_API_KEY` must
-match the backend it points at; `/api/health` on the deployed site tells you if
-it does not.
+The frontend reads `INTERNAL_API_URL` and `DASHBOARD_API_KEY` (or the legacy
+`DASHBOARD_PASSWORD`) from `frontend/.env.local` on your machine and from the
+Amplify branch settings on dev and prod. The key must match the backend it
+points at; `/api/health` on the deployed site tells you if it does not.
+
+### Dashboard accounts and roles
+
+Everyone signs in with their own account (table `dashboard_users`, migration
+029). There is no shared login. Each account has one role:
+
+| Role | Can use |
+|---|---|
+| `viewer` | Data screens: network, channels, campus channels, web analytics, athletes |
+| `onboarding` | Viewer, plus the onboarding workflow (approve, decline, send and resend contracts and payout links) |
+| `admin` | Everything, including the admin page and managing users |
+
+The backend enforces the role on every dashboard API route, and a viewer gets
+403 from the onboarding routes. The dashboard hides the pages and links a role
+cannot use. Changing someone's role or password, or removing them, signs them
+out at once.
+
+Admins manage users on the admin page. Create the first admin on each
+environment from the API box:
+
+```bash
+python -m scripts.dashboard_user add <username> --role admin   # prompts for the password
+python -m scripts.dashboard_user list
+```
+
+Local (`ENVIRONMENT=local` + `AUTH_DISABLED=true`) has no logins: every request
+runs as a local admin.
 
 ---
 

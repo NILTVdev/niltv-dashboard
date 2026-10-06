@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import case, cast, Date, func as sqlfunc
 from sqlalchemy.orm import Session
 
-from backend.auth import require_api_key
+from backend.auth import require_api_key, require_role
 from backend.config import get_settings
 from backend.database import get_db
 from backend.models import AthletePost, ZoomphPost, ZoomphPostSnapshot
@@ -24,7 +24,7 @@ def _apply_date_filter(query, start_date: Optional[date], end_date: Optional[dat
         query = query.filter(ZoomphPost.posted_at < datetime.combine(end_date, datetime.min.time()))
     return query
 
-router = APIRouter(dependencies=[Depends(require_api_key)])
+router = APIRouter(dependencies=[Depends(require_api_key), Depends(require_role("viewer"))])
 
 
 class ZoomphOut(BaseModel):

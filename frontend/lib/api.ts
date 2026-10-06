@@ -8,11 +8,14 @@ import type {
   GA4Summary, GSCSummary,
 } from "./types";
 
-import { API_KEY, BACKEND_URL as BASE } from "./serverEnv";
+import { BACKEND_URL as BASE } from "./serverEnv";
+import { backendHeaders, sessionToken } from "./serverSession";
 
+// Every call carries the signed-in user's session so the backend can enforce
+// roles on the routes that need them (onboarding, admin).
 async function apiFetch<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
-    headers: { "X-API-Key": API_KEY },
+    headers: backendHeaders(await sessionToken()),
     next: { revalidate: 300 },
   });
   if (!res.ok) throw new Error(`API ${path} → ${res.status}`);
@@ -90,7 +93,7 @@ export const getCampusChannelsSummary = () =>
 import type { Application, ApplicationsSummary } from "./types";
 
 async function apiFetchFresh<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, { headers: { "X-API-Key": API_KEY }, cache: "no-store" });
+  const res = await fetch(`${BASE}${path}`, { headers: backendHeaders(await sessionToken()), cache: "no-store" });
   if (!res.ok) throw new Error(`API ${path} → ${res.status}`);
   return res.json() as Promise<T>;
 }

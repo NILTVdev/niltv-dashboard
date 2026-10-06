@@ -12,10 +12,11 @@ from fastapi.testclient import TestClient
 
 from backend.database import SessionLocal
 from backend.main import app
+from backend.tests._staff import staff_headers
 from backend.models import BrandSnapshot
 
 client = TestClient(app)
-AUTH = {"X-API-Key": "test"}
+AUTH = staff_headers("viewer")  # X-API-Key + a signed-in viewer
 
 
 def _seed():
