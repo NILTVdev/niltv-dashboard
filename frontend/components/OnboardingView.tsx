@@ -26,20 +26,26 @@ const STATUS_LABEL: Record<ApplicationStatus, string> = {
   applicant: "Applicant",
   approved: "Approved",
   declined: "Declined",
-  agreement_sent: "Agreement sent",
+  agreement_sent: "Awaiting signature",
   signed: "Signed",
   stripe_pending: "Stripe pending",
   accepted: "Accepted",
 };
 
+// Three tones, by whose move it is: amber = staff, gray = waiting on the
+// athlete (or closed), green = done.
+const OURS = "bg-amber-50 text-amber-800 ring-amber-200";
+const WAITING = "bg-gray-100 text-gray-600 ring-gray-200";
+const DONE = "bg-emerald-50 text-emerald-800 ring-emerald-200";
+
 const STATUS_STYLE: Record<ApplicationStatus, string> = {
-  applicant: "bg-amber-50 text-amber-800 ring-amber-200",
-  approved: "bg-sky-50 text-sky-800 ring-sky-200",
-  declined: "bg-gray-100 text-gray-600 ring-gray-200",
-  agreement_sent: "bg-sky-50 text-sky-800 ring-sky-200",
-  signed: "bg-indigo-50 text-indigo-800 ring-indigo-200",
-  stripe_pending: "bg-violet-50 text-violet-800 ring-violet-200",
-  accepted: "bg-emerald-50 text-emerald-800 ring-emerald-200",
+  applicant: OURS,
+  approved: OURS, // approved, but the agreement has not gone out
+  declined: WAITING,
+  agreement_sent: WAITING,
+  signed: OURS, // signed, but Stripe has not been started
+  stripe_pending: WAITING,
+  accepted: DONE,
 };
 
 // Filter chips in pipeline order. "open" = everything still moving.
@@ -175,29 +181,12 @@ export default function OnboardingView({ initial, summary }: Props) {
         </div>
         {integ && (
           <div className="flex flex-wrap gap-2 text-xs">
-            <Integration ok={integ.docusign || integ.docusign_powerform} label={integ.docusign ? "DocuSign API" : "DocuSign PowerForm"} />
+            <Integration ok={integ.docusign || integ.docusign_powerform} label="DocuSign" />
             <Integration ok={integ.stripe} label="Stripe" />
             <Integration ok={integ.payout_links} label="Payout links" />
             <Integration ok={integ.email} label="Email" />
           </div>
         )}
-      </div>
-
-      {/* Pipeline counts */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-5">
-        {(["applicant", "agreement_sent", "signed", "stripe_pending", "accepted", "declined"] as ApplicationStatus[]).map((s) => (
-          <button
-            key={s}
-            onClick={() => setFilter(s === "signed" ? "all" : s)}
-            className={cn(
-              "rounded-xl border bg-white p-3 text-left shadow-sm hover:border-[var(--brand-light)] transition-colors",
-              filter === s && "ring-2 ring-[var(--brand-light)]",
-            )}
-          >
-            <div className="text-2xl font-bold text-[var(--brand)]">{counts[s] ?? 0}</div>
-            <div className="text-xs text-gray-500">{STATUS_LABEL[s]}</div>
-          </button>
-        ))}
       </div>
 
       {/* Filters: status tabs on their own row; school/sport + search on the
@@ -288,7 +277,7 @@ export default function OnboardingView({ initial, summary }: Props) {
                       <div className="text-xs text-gray-500">{[r.sport, r.year].filter(Boolean).join(" · ")}</div>
                     </td>
                     <td className="px-3 py-2">
-                      <span className={cn("inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ring-1", STATUS_STYLE[r.status])}>
+                      <span className={cn("inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ring-1", STATUS_STYLE[r.status])}>
                         {STATUS_LABEL[r.status]}
                       </span>
                     </td>
@@ -323,12 +312,13 @@ function RowGroup({ children }: { open: boolean; children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// Shown only when something is not set up; a configured integration says nothing.
 function Integration({ ok, label }: { ok: boolean; label: string }) {
+  if (ok) return null;
   return (
-    <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 ring-1",
-      ok ? "bg-emerald-50 text-emerald-800 ring-emerald-200" : "bg-amber-50 text-amber-800 ring-amber-200")}>
-      <span className={cn("h-1.5 w-1.5 rounded-full", ok ? "bg-emerald-500" : "bg-amber-500")} />
-      {label}{ok ? "" : " not configured"}
+    <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 ring-1 bg-amber-50 text-amber-800 ring-amber-200">
+      <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+      {label} not configured
     </span>
   );
 }
