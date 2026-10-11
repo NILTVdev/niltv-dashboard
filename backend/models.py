@@ -632,6 +632,20 @@ class Application(Base):
     )
 
 
+class ReconcileRun(Base):
+    """One nightly or staff-triggered re-check of every open application
+    against DocuSign and Stripe (migration 029)."""
+    __tablename__ = "reconcile_runs"
+
+    id = Column(Integer, primary_key=True)
+    started_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+    finished_at = Column(TIMESTAMP(timezone=True))
+    trigger = Column(Text, nullable=False)      # nightly | staff
+    triggered_by = Column(Text)
+    stats = Column(JSON)
+    error = Column(Text)
+
+
 class ApplicationEvent(Base):
     """Timeline row for an application: transitions, emails, webhooks, staff
     actions. Drives the 'what do they still need' view and the audit trail."""
