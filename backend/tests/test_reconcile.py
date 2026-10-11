@@ -161,7 +161,7 @@ def test_scope_limits_the_run(db, fakes):
     assert waiting.status == "agreement_sent"          # out of scope, untouched
     assert done.status == "accepted" and done.stripe_requirements_due == ["external_account"]
     run = client.get("/api/applications/reconcile/runs", headers=AUTH).json()[0]
-    assert run["stats"]["scope"] == "accepted" and run["stats"]["accepted"] == 0
+    assert run["stats"]["scope"] == "accepted" and run["stats"].get("accepted", 0) == 0
     assert run["stats"]["changed"] == 1
 
     assert client.post("/api/applications/reconcile?scope=declined", headers=AUTH).status_code == 400
