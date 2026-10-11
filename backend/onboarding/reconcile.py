@@ -1,15 +1,17 @@
-"""Re-check every open application against DocuSign and Stripe.
+"""Re-check applications against DocuSign and Stripe.
 
 DocuSign Connect and the Stripe ``account.updated`` webhook normally move a
 row forward. If a delivery is missed, the row would sit in its old state
 until someone pressed Refresh. A reconcile run does that Refresh for every
-open row:
+row in its scope (see SCOPES):
 
   - approved / agreement_sent with an envelope -> DocuSign envelope status.
     A completed envelope goes through the normal path (signed -> Stripe
     account + payout link email), exactly as the webhook would.
   - signed / stripe_pending with a Stripe account -> Stripe account state.
     Payouts enabled with nothing due -> accepted.
+  - accepted with a Stripe account -> Stripe account state, so re-opened
+    requirements (expired ID, bank change) show on the row.
 
 Rows with no change only get ``stripe_checked_at`` bumped, so the timeline
 stays readable. Every change is a webhook that never arrived; it lands in the
@@ -23,7 +25,8 @@ link, which is a staff decision.
 Per-row provider errors become ``error`` events and the run continues.
 
 Callers: the nightly job (``backend.jobs.reconcile_applications``) and the
-dashboard's "Refresh all" button (``POST /api/applications/reconcile``).
+dashboard's "Refresh category" / "Refresh all" buttons
+(``POST /api/applications/reconcile?scope=...``).
 """
 
 from __future__ import annotations
@@ -43,7 +46,17 @@ logger = logging.getLogger(__name__)
 
 ACTOR = "reconcile"
 DOCUSIGN_STATUSES = ("approved", "agreement_sent")
-STRIPE_STATUSES = ("signed", "stripe_pending")
+STRIPE_STATUSES = ("signed", "stripe_pending", "accepted")
+# Which rows a run covers. "all" is the nightly default; the others match the
+# Onboarding screen's filter tabs ("Refresh category"). Accepted rows are
+# checked for Stripe re-opening requirements (expired ID, bank change).
+SCOPES = {
+    "all": ("approved", "agreement_sent", "signed", "stripe_pending", "accepted"),
+    "open": ("approved", "agreement_sent", "signed", "stripe_pending"),
+    "agreement_sent": ("approved", "agreement_sent"),
+    "stripe_pending": ("signed", "stripe_pending"),
+    "accepted": ("accepted",),
+}
 # A run that has not finished after this long is treated as dead (process
 # restarted mid-run), so it no longer blocks a new one.
 STALE_AFTER = timedelta(minutes=15)
@@ -57,8 +70,10 @@ def running(db: Session) -> Optional[ReconcileRun]:
             .order_by(ReconcileRun.id.desc()).first())
 
 
-def start(db: Session, trigger: str, by: Optional[str] = None) -> ReconcileRun:
-    run = ReconcileRun(trigger=trigger, triggered_by=by, started_at=now_utc())
+def start(db: Session, trigger: str, by: Optional[str] = None, scope: str = "all") -> ReconcileRun:
+    if scope not in SCOPES:
+        raise ValueError(f"scope must be one of {tuple(SCOPES)}")
+    run = ReconcileRun(trigger=trigger, triggered_by=by, started_at=now_utc(), stats={"scope": scope})
     db.add(run)
     db.commit()
     return run
@@ -118,7 +133,7 @@ def _check_stripe(db: Session, app: Application, stats: Counter, changes: list) 
     stats["stripe_changed"] += 1
     status_before = app.status
     pipeline.on_stripe_account(db, app, acct, actor=ACTOR)
-    if app.status == "accepted":
+    if app.status == "accepted" and status_before != "accepted":
         stats["accepted"] += 1
     due = len(set(state["currently_due"]) | set(state["past_due"]))
     changes.append({"id": app.id, "name": _name(app), "source": "stripe",
@@ -127,13 +142,14 @@ def _check_stripe(db: Session, app: Application, stats: Counter, changes: list) 
 
 
 def execute(db: Session, run: ReconcileRun) -> ReconcileRun:
-    """Check every open row and finish ``run`` with its stats."""
+    """Check every row in the run's scope and finish ``run`` with its stats."""
     ds_on, st_on = docusign.is_configured(), stripe_connect.is_configured()
+    scope = (run.stats or {}).get("scope", "all")
     stats: Counter = Counter()
     changes: list[dict] = []
     try:
         rows = (db.query(Application)
-                .filter(Application.status.in_(DOCUSIGN_STATUSES + STRIPE_STATUSES))
+                .filter(Application.status.in_(SCOPES[scope]))
                 .order_by(Application.id).all())
         stats["rows"] = len(rows)
         for app in rows:
@@ -148,7 +164,7 @@ def execute(db: Session, run: ReconcileRun) -> ReconcileRun:
         db.rollback()
         run.error = f"{type(e).__name__}: {e}"
         logger.exception("reconcile run %s crashed", run.id)
-    run.stats = {**stats, "changed": stats["docusign_changed"] + stats["stripe_changed"],
+    run.stats = {**stats, "scope": scope, "changed": stats["docusign_changed"] + stats["stripe_changed"],
                  "docusign_configured": ds_on, "stripe_configured": st_on, "changes": changes}
     if stats["errors"] and not run.error:
         run.error = f"{stats['errors']} row(s) errored; see application_events kind=error"

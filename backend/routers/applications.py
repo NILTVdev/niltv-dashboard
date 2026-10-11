@@ -359,13 +359,20 @@ def _execute_in_background(run_id: int) -> None:
 
 
 @router.post("/reconcile")
-def start_reconcile(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    """Re-check every open row against DocuSign and Stripe (the nightly job,
-    on demand). Runs in the background; poll GET /reconcile/runs."""
+def start_reconcile(
+    background_tasks: BackgroundTasks,
+    scope: str = Query("all", description="all | open | agreement_sent | stripe_pending | accepted"),
+    db: Session = Depends(get_db),
+):
+    """Re-check rows against DocuSign and Stripe (the nightly job, on demand).
+    ``scope`` limits it to one filter tab. Runs in the background; poll
+    GET /reconcile/runs."""
+    if scope not in reconcile.SCOPES:
+        raise HTTPException(status_code=400, detail=f"scope must be one of {tuple(reconcile.SCOPES)}")
     active = reconcile.running(db)
     if active:
         raise HTTPException(status_code=409, detail=f"A refresh is already running (run {active.id})")
-    run = reconcile.start(db, "staff", by="dashboard")
+    run = reconcile.start(db, "staff", by="dashboard", scope=scope)
     background_tasks.add_task(_execute_in_background, run.id)
     return _run_out(run)
 
