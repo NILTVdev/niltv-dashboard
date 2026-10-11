@@ -104,6 +104,7 @@ jobs:
               "10 * * * * $WRAPPER backend.jobs.run_brand_ig" \
               "15 */3 * * * $WRAPPER backend.jobs.run_niltv_network" \
               "*/15 * * * * $WRAPPER backend.jobs.export_applications_sheet" \
+              "30 6 * * * $WRAPPER backend.jobs.reconcile_applications" \
               "45 5 * * * $WRAPPER backend.jobs.run_manual_channels" \
               "0 0 2 * * $WRAPPER backend.jobs.refresh_brand_ig_token" \
               | crontab -

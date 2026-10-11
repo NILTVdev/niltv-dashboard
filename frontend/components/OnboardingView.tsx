@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { cn, fmtDate } from "@/lib/utils";
 import type {
-  Application, ApplicationEvent, ApplicationStatus, ApplicationStep, ApplicationsSummary,
+  Application, ApplicationEvent, ApplicationStatus, ApplicationStep, ApplicationsSummary, ReconcileRun,
 } from "@/lib/types";
 
 interface Props {
@@ -81,6 +81,8 @@ export default function OnboardingView({ initial, summary }: Props) {
   const [openId, setOpenId] = useState<number | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [runs, setRuns] = useState<ReconcileRun[]>([]);
+  const [showRuns, setShowRuns] = useState(false);
 
   // Staff notification emails link to ?id=<n>; open that row on arrival.
   useEffect(() => {
@@ -144,6 +146,49 @@ export default function OnboardingView({ initial, summary }: Props) {
     }
   }
 
+  // "Refresh all" = the nightly reconcile, on demand. It runs in the
+  // background on the API; poll the run list until it finishes, then reload
+  // the rows it may have moved.
+  async function loadRuns(): Promise<ReconcileRun[]> {
+    const res = await fetch("/api/proxy/api/applications/reconcile/runs?limit=10");
+    const data = res.ok ? ((await res.json()) as ReconcileRun[]) : [];
+    setRuns(data);
+    return data;
+  }
+
+  useEffect(() => {
+    loadRuns().catch(() => {});
+  }, []);
+
+  const lastRun = runs[0];
+  // A run unfinished after 15 minutes died with the process (same rule as the API).
+  const refreshing = !!lastRun && !lastRun.finished_at
+    && Date.now() - new Date(lastRun.started_at).getTime() < 15 * 60_000;
+
+  async function refreshAll() {
+    setError(null);
+    try {
+      const res = await fetch("/api/proxy/api/applications/reconcile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.detail ?? `HTTP ${res.status}`);
+      setRuns((prev) => [data as ReconcileRun, ...prev]);
+      for (let i = 0; i < 300; i++) { // 15 minutes, the API's stale-run limit
+        await new Promise((r) => setTimeout(r, 3000));
+        const latest = (await loadRuns()).find((r) => r.id === data.id);
+        if (!latest || latest.finished_at) break;
+      }
+      const list = await fetch("/api/proxy/api/applications/?status=all&limit=2000");
+      if (list.ok) setRows((await list.json()) as Application[]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      loadRuns().catch(() => {});
+    }
+  }
+
   async function toggle(id: number) {
     if (openId === id) {
       setOpenId(null);
@@ -173,6 +218,17 @@ export default function OnboardingView({ initial, summary }: Props) {
             the signed envelope triggers the Stripe payout link automatically.
           </p>
         </div>
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex items-center gap-2">
+            {lastRun && (
+              <button onClick={() => setShowRuns((v) => !v)} className="text-xs text-gray-500 hover:text-gray-800 underline-offset-2 hover:underline">
+                {refreshing ? "Refreshing…" : `Last refresh ${fmtWhen(lastRun.finished_at)} (${lastRun.trigger}): ${runLine(lastRun)}`}
+              </button>
+            )}
+            <Btn disabled={refreshing} onClick={refreshAll} title="Re-check every open row against DocuSign and Stripe (also runs nightly)">
+              <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} /> Refresh all
+            </Btn>
+          </div>
         {integ && (
           <div className="flex flex-wrap gap-2 text-xs">
             <Integration ok={integ.docusign || integ.docusign_powerform} label={integ.docusign ? "DocuSign API" : "DocuSign PowerForm"} />
@@ -181,7 +237,10 @@ export default function OnboardingView({ initial, summary }: Props) {
             <Integration ok={integ.email} label="Email" />
           </div>
         )}
+        </div>
       </div>
+
+      {showRuns && runs.length > 0 && <RunLog runs={runs} />}
 
       {/* Pipeline counts */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-5">
@@ -321,6 +380,45 @@ export default function OnboardingView({ initial, summary }: Props) {
 
 function RowGroup({ children }: { open: boolean; children: React.ReactNode }) {
   return <>{children}</>;
+}
+
+function runLine(run: ReconcileRun): string {
+  const s = run.stats ?? {};
+  const checked = (s.docusign_checked ?? 0) + (s.stripe_checked ?? 0);
+  const parts = [`${checked} checked`, `${s.changed ?? 0} changed`];
+  if (s.errors || run.error) parts.push(`${s.errors ?? 0} errors`);
+  return parts.join(", ");
+}
+
+// Every change a run makes is a webhook that never arrived; a healthy
+// pipeline shows "0 changed" here night after night.
+function RunLog({ runs }: { runs: ReconcileRun[] }) {
+  return (
+    <div className="mb-5 rounded-xl border bg-white p-3 shadow-sm text-xs">
+      <div className="mb-2 font-semibold text-gray-700">Refresh log</div>
+      <ul className="space-y-2">
+        {runs.map((run) => (
+          <li key={run.id}>
+            <div className={cn("text-gray-700", run.error && "text-red-700")}>
+              {fmtWhen(run.started_at)} · {run.trigger === "nightly" ? "Nightly" : "Refresh all"} ·{" "}
+              {run.finished_at ? runLine(run) : "running"}
+              {run.stats?.signed_no_stripe ? ` · ${run.stats.signed_no_stripe} signed without Stripe` : ""}
+              {run.error ? ` · ${run.error}` : ""}
+            </div>
+            {(run.stats?.changes ?? []).length > 0 && (
+              <ul className="mt-1 ml-4 list-disc text-gray-500">
+                {run.stats.changes!.map((c) => (
+                  <li key={`${run.id}-${c.id}`}>
+                    {c.name} ({c.source === "docusign" ? "DocuSign" : "Stripe"}): {c.from} → {c.to}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 function Integration({ ok, label }: { ok: boolean; label: string }) {
