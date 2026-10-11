@@ -145,3 +145,23 @@ def test_one_run_at_a_time(db, fakes):
     active.started_at = now_utc() - timedelta(minutes=20)  # died mid-run
     db.commit()
     assert reconcile.running(db) is None
+
+
+def test_scope_limits_the_run(db, fakes):
+    waiting = _row(db, "a@x.com", "agreement_sent", docusign_envelope_id="e1", docusign_status="sent")
+    done = _row(db, "b@x.com", "accepted", stripe_account_id="acct_B",
+                stripe_payouts_enabled=True, stripe_requirements_due=[])
+    fakes["envelopes"]["e1"] = "completed"
+    fakes["accounts"]["acct_B"] = _acct(False, ["external_account"])  # bank removed
+
+    r = client.post("/api/applications/reconcile?scope=accepted", headers=AUTH)
+    assert r.status_code == 200, r.text
+    db.refresh(waiting)
+    db.refresh(done)
+    assert waiting.status == "agreement_sent"          # out of scope, untouched
+    assert done.status == "accepted" and done.stripe_requirements_due == ["external_account"]
+    run = client.get("/api/applications/reconcile/runs", headers=AUTH).json()[0]
+    assert run["stats"]["scope"] == "accepted" and run["stats"]["accepted"] == 0
+    assert run["stats"]["changed"] == 1
+
+    assert client.post("/api/applications/reconcile?scope=declined", headers=AUTH).status_code == 400

@@ -594,6 +594,7 @@ export interface ReconcileRun {
   finished_at: string | null;
   error: string | null;
   stats: {
+    scope?: "all" | "open" | "agreement_sent" | "stripe_pending" | "accepted";
     rows?: number;
     docusign_checked?: number;
     stripe_checked?: number;

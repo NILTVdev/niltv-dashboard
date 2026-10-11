@@ -42,6 +42,15 @@ const STATUS_STYLE: Record<ApplicationStatus, string> = {
   accepted: "bg-emerald-50 text-emerald-800 ring-emerald-200",
 };
 
+// Filter tab -> what "Refresh category" re-checks (see backend reconcile.SCOPES).
+const CATEGORY_SCOPE: Record<string, string> = {
+  open: "open",
+  agreement_sent: "agreement_sent",
+  stripe_pending: "stripe_pending",
+  accepted: "accepted",
+  all: "all",
+};
+
 // Filter chips in pipeline order. "open" = everything still moving.
 const FILTERS: { key: string; label: string }[] = [
   { key: "open", label: "Open" },
@@ -165,10 +174,14 @@ export default function OnboardingView({ initial, summary }: Props) {
   const refreshing = !!lastRun && !lastRun.finished_at
     && Date.now() - new Date(lastRun.started_at).getTime() < 15 * 60_000;
 
-  async function refreshAll() {
+  // Filter tab -> reconcile scope. Applicants and declined rows have nothing
+  // waiting on DocuSign or Stripe.
+  const categoryScope = CATEGORY_SCOPE[filter] ?? null;
+
+  async function refreshRows(scope: string) {
     setError(null);
     try {
-      const res = await fetch("/api/proxy/api/applications/reconcile", {
+      const res = await fetch(`/api/proxy/api/applications/reconcile?scope=${encodeURIComponent(scope)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: "{}",
@@ -218,17 +231,6 @@ export default function OnboardingView({ initial, summary }: Props) {
             the signed envelope triggers the Stripe payout link automatically.
           </p>
         </div>
-        <div className="flex flex-col items-end gap-2">
-          <div className="flex items-center gap-2">
-            {lastRun && (
-              <button onClick={() => setShowRuns((v) => !v)} className="text-xs text-gray-500 hover:text-gray-800 underline-offset-2 hover:underline">
-                {refreshing ? "Refreshing…" : `Last refresh ${fmtWhen(lastRun.finished_at)} (${lastRun.trigger}): ${runLine(lastRun)}`}
-              </button>
-            )}
-            <Btn disabled={refreshing} onClick={refreshAll} title="Re-check every open row against DocuSign and Stripe (also runs nightly)">
-              <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} /> Refresh all
-            </Btn>
-          </div>
         {integ && (
           <div className="flex flex-wrap gap-2 text-xs">
             <Integration ok={integ.docusign || integ.docusign_powerform} label={integ.docusign ? "DocuSign API" : "DocuSign PowerForm"} />
@@ -237,10 +239,7 @@ export default function OnboardingView({ initial, summary }: Props) {
             <Integration ok={integ.email} label="Email" />
           </div>
         )}
-        </div>
       </div>
-
-      {showRuns && runs.length > 0 && <RunLog runs={runs} />}
 
       {/* Pipeline counts */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-5">
@@ -262,7 +261,8 @@ export default function OnboardingView({ initial, summary }: Props) {
       {/* Filters: status tabs on their own row; school/sport + search on the
           next. One wrapping row used to strand the search box on a second
           line, right-aligned by ml-auto, at tablet widths. */}
-      <div className="mb-2 flex flex-wrap gap-1 rounded-lg bg-gray-100 p-1 w-fit max-w-full">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap gap-1 rounded-lg bg-gray-100 p-1 w-fit max-w-full">
         {FILTERS.map((f) => (
           <button
             key={f.key}
@@ -277,6 +277,32 @@ export default function OnboardingView({ initial, summary }: Props) {
           </button>
         ))}
       </div>
+        <div className="flex items-center gap-2 sm:ml-auto">
+          <Btn
+            disabled={refreshing || !categoryScope}
+            onClick={() => categoryScope && refreshRows(categoryScope)}
+            title={categoryScope
+              ? `Re-check the ${FILTERS.find((f) => f.key === filter)?.label ?? ""} tab against DocuSign and Stripe`
+              : "Nothing in this tab is waiting on DocuSign or Stripe"}
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} /> Refresh category
+          </Btn>
+          <Btn disabled={refreshing} onClick={() => refreshRows("all")}
+               title="Re-check every row against DocuSign and Stripe (also runs nightly)">
+            <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} /> Refresh all
+          </Btn>
+        </div>
+      </div>
+      {lastRun && (
+        <div className="mb-2 text-right">
+          <button onClick={() => setShowRuns((v) => !v)} className="text-xs text-gray-500 hover:text-gray-800 underline-offset-2 hover:underline">
+            {refreshing
+              ? "Refreshing…"
+              : `Last refresh ${fmtWhen(lastRun.finished_at)} · ${scopeLabel(lastRun)}: ${runLine(lastRun)}`}
+          </button>
+        </div>
+      )}
+      {showRuns && runs.length > 0 && <RunLog runs={runs} />}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <select value={school} onChange={(e) => setSchool(e.target.value)} className="h-9 rounded-md border px-2 text-sm bg-white">
           <option value="all">Schools ({schools.length})</option>
@@ -382,6 +408,13 @@ function RowGroup({ children }: { open: boolean; children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function scopeLabel(run: ReconcileRun): string {
+  if (run.trigger === "nightly") return "Nightly";
+  const scope = run.stats?.scope ?? "all";
+  if (scope === "all") return "Refresh all";
+  return `Refresh ${FILTERS.find((f) => f.key === scope)?.label ?? scope}`;
+}
+
 function runLine(run: ReconcileRun): string {
   const s = run.stats ?? {};
   const checked = (s.docusign_checked ?? 0) + (s.stripe_checked ?? 0);
@@ -400,7 +433,7 @@ function RunLog({ runs }: { runs: ReconcileRun[] }) {
         {runs.map((run) => (
           <li key={run.id}>
             <div className={cn("text-gray-700", run.error && "text-red-700")}>
-              {fmtWhen(run.started_at)} · {run.trigger === "nightly" ? "Nightly" : "Refresh all"} ·{" "}
+              {fmtWhen(run.started_at)} · {scopeLabel(run)} ·{" "}
               {run.finished_at ? runLine(run) : "running"}
               {run.stats?.signed_no_stripe ? ` · ${run.stats.signed_no_stripe} signed without Stripe` : ""}
               {run.error ? ` · ${run.error}` : ""}
