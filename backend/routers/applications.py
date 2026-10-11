@@ -22,14 +22,14 @@ from collections import deque
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from backend.auth import require_api_key
-from backend.database import get_db
-from backend.models import Application
-from backend.onboarding import cognito, docusign, pipeline, schools, stripe_connect
+from backend.database import SessionLocal, get_db
+from backend.models import Application, ReconcileRun
+from backend.onboarding import cognito, docusign, pipeline, reconcile, schools, stripe_connect
 
 log = logging.getLogger(__name__)
 
@@ -338,6 +338,50 @@ def applications_summary(db: Session = Depends(get_db)):
             "email": bool(docusign.get_settings().from_email),
         },
     }
+
+
+# -- Reconcile ("Refresh all") ----------------------------------------------
+
+def _run_out(run: ReconcileRun) -> dict:
+    return {"id": run.id, "trigger": run.trigger, "triggered_by": run.triggered_by,
+            "started_at": run.started_at, "finished_at": run.finished_at,
+            "stats": run.stats or {}, "error": run.error}
+
+
+def _execute_in_background(run_id: int) -> None:
+    db = SessionLocal()
+    try:
+        run = db.query(ReconcileRun).filter(ReconcileRun.id == run_id).first()
+        if run:
+            reconcile.execute(db, run)
+    finally:
+        db.close()
+
+
+@router.post("/reconcile")
+def start_reconcile(
+    background_tasks: BackgroundTasks,
+    scope: str = Query("all", description="all | open | agreement_sent | stripe_pending | accepted"),
+    db: Session = Depends(get_db),
+):
+    """Re-check rows against DocuSign and Stripe (the nightly job, on demand).
+    ``scope`` limits it to one filter tab. Runs in the background; poll
+    GET /reconcile/runs."""
+    if scope not in reconcile.SCOPES:
+        raise HTTPException(status_code=400, detail=f"scope must be one of {tuple(reconcile.SCOPES)}")
+    active = reconcile.running(db)
+    if active:
+        raise HTTPException(status_code=409, detail=f"A refresh is already running (run {active.id})")
+    run = reconcile.start(db, "staff", by="dashboard", scope=scope)
+    background_tasks.add_task(_execute_in_background, run.id)
+    return _run_out(run)
+
+
+@router.get("/reconcile/runs")
+def reconcile_runs(limit: int = Query(10, le=100), db: Session = Depends(get_db)):
+    """Latest reconcile runs, newest first: when, who, counts, what changed."""
+    runs = db.query(ReconcileRun).order_by(ReconcileRun.id.desc()).limit(limit).all()
+    return [_run_out(r) for r in runs]
 
 
 def _get(db: Session, application_id: int) -> Application:

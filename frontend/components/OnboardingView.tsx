@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { cn, fmtDate } from "@/lib/utils";
 import type {
-  Application, ApplicationEvent, ApplicationStatus, ApplicationStep, ApplicationsSummary,
+  Application, ApplicationEvent, ApplicationStatus, ApplicationStep, ApplicationsSummary, ReconcileRun,
 } from "@/lib/types";
 
 interface Props {
@@ -40,6 +40,15 @@ const STATUS_STYLE: Record<ApplicationStatus, string> = {
   signed: "bg-indigo-50 text-indigo-800 ring-indigo-200",
   stripe_pending: "bg-violet-50 text-violet-800 ring-violet-200",
   accepted: "bg-emerald-50 text-emerald-800 ring-emerald-200",
+};
+
+// Filter tab -> what "Refresh category" re-checks (see backend reconcile.SCOPES).
+const CATEGORY_SCOPE: Record<string, string> = {
+  open: "open",
+  agreement_sent: "agreement_sent",
+  stripe_pending: "stripe_pending",
+  accepted: "accepted",
+  all: "all",
 };
 
 // Filter chips in pipeline order. "open" = everything still moving.
@@ -81,6 +90,8 @@ export default function OnboardingView({ initial, summary }: Props) {
   const [openId, setOpenId] = useState<number | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [runs, setRuns] = useState<ReconcileRun[]>([]);
+  const [showRuns, setShowRuns] = useState(false);
 
   // Staff notification emails link to ?id=<n>; open that row on arrival.
   useEffect(() => {
@@ -144,6 +155,53 @@ export default function OnboardingView({ initial, summary }: Props) {
     }
   }
 
+  // "Refresh all" = the nightly reconcile, on demand. It runs in the
+  // background on the API; poll the run list until it finishes, then reload
+  // the rows it may have moved.
+  async function loadRuns(): Promise<ReconcileRun[]> {
+    const res = await fetch("/api/proxy/api/applications/reconcile/runs?limit=10");
+    const data = res.ok ? ((await res.json()) as ReconcileRun[]) : [];
+    setRuns(data);
+    return data;
+  }
+
+  useEffect(() => {
+    loadRuns().catch(() => {});
+  }, []);
+
+  const lastRun = runs[0];
+  // A run unfinished after 15 minutes died with the process (same rule as the API).
+  const refreshing = !!lastRun && !lastRun.finished_at
+    && Date.now() - new Date(lastRun.started_at).getTime() < 15 * 60_000;
+
+  // Filter tab -> reconcile scope. Applicants and declined rows have nothing
+  // waiting on DocuSign or Stripe.
+  const categoryScope = CATEGORY_SCOPE[filter] ?? null;
+
+  async function refreshRows(scope: string) {
+    setError(null);
+    try {
+      const res = await fetch(`/api/proxy/api/applications/reconcile?scope=${encodeURIComponent(scope)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.detail ?? `HTTP ${res.status}`);
+      setRuns((prev) => [data as ReconcileRun, ...prev]);
+      for (let i = 0; i < 300; i++) { // 15 minutes, the API's stale-run limit
+        await new Promise((r) => setTimeout(r, 3000));
+        const latest = (await loadRuns()).find((r) => r.id === data.id);
+        if (!latest || latest.finished_at) break;
+      }
+      const list = await fetch("/api/proxy/api/applications/?status=all&limit=2000");
+      if (list.ok) setRows((await list.json()) as Application[]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      loadRuns().catch(() => {});
+    }
+  }
+
   async function toggle(id: number) {
     if (openId === id) {
       setOpenId(null);
@@ -203,7 +261,8 @@ export default function OnboardingView({ initial, summary }: Props) {
       {/* Filters: status tabs on their own row; school/sport + search on the
           next. One wrapping row used to strand the search box on a second
           line, right-aligned by ml-auto, at tablet widths. */}
-      <div className="mb-2 flex flex-wrap gap-1 rounded-lg bg-gray-100 p-1 w-fit max-w-full">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap gap-1 rounded-lg bg-gray-100 p-1 w-fit max-w-full">
         {FILTERS.map((f) => (
           <button
             key={f.key}
@@ -218,6 +277,32 @@ export default function OnboardingView({ initial, summary }: Props) {
           </button>
         ))}
       </div>
+        <div className="flex items-center gap-2 sm:ml-auto">
+          <Btn
+            disabled={refreshing || !categoryScope}
+            onClick={() => categoryScope && refreshRows(categoryScope)}
+            title={categoryScope
+              ? `Re-check the ${FILTERS.find((f) => f.key === filter)?.label ?? ""} tab against DocuSign and Stripe`
+              : "Nothing in this tab is waiting on DocuSign or Stripe"}
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} /> Refresh category
+          </Btn>
+          <Btn disabled={refreshing} onClick={() => refreshRows("all")}
+               title="Re-check every row against DocuSign and Stripe (also runs nightly)">
+            <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} /> Refresh all
+          </Btn>
+        </div>
+      </div>
+      {lastRun && (
+        <div className="mb-2 text-right">
+          <button onClick={() => setShowRuns((v) => !v)} className="text-xs text-gray-500 hover:text-gray-800 underline-offset-2 hover:underline">
+            {refreshing
+              ? "Refreshing…"
+              : `Last refresh ${fmtWhen(lastRun.finished_at)} · ${scopeLabel(lastRun)}: ${runLine(lastRun)}`}
+          </button>
+        </div>
+      )}
+      {showRuns && runs.length > 0 && <RunLog runs={runs} />}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <select value={school} onChange={(e) => setSchool(e.target.value)} className="h-9 rounded-md border px-2 text-sm bg-white">
           <option value="all">Schools ({schools.length})</option>
@@ -321,6 +406,52 @@ export default function OnboardingView({ initial, summary }: Props) {
 
 function RowGroup({ children }: { open: boolean; children: React.ReactNode }) {
   return <>{children}</>;
+}
+
+function scopeLabel(run: ReconcileRun): string {
+  if (run.trigger === "nightly") return "Nightly";
+  const scope = run.stats?.scope ?? "all";
+  if (scope === "all") return "Refresh all";
+  return `Refresh ${FILTERS.find((f) => f.key === scope)?.label ?? scope}`;
+}
+
+function runLine(run: ReconcileRun): string {
+  const s = run.stats ?? {};
+  const checked = (s.docusign_checked ?? 0) + (s.stripe_checked ?? 0);
+  const parts = [`${checked} checked`, `${s.changed ?? 0} changed`];
+  if (s.errors || run.error) parts.push(`${s.errors ?? 0} errors`);
+  return parts.join(", ");
+}
+
+// Every change a run makes is a webhook that never arrived; a healthy
+// pipeline shows "0 changed" here night after night.
+function RunLog({ runs }: { runs: ReconcileRun[] }) {
+  return (
+    <div className="mb-5 rounded-xl border bg-white p-3 shadow-sm text-xs">
+      <div className="mb-2 font-semibold text-gray-700">Refresh log</div>
+      <ul className="space-y-2">
+        {runs.map((run) => (
+          <li key={run.id}>
+            <div className={cn("text-gray-700", run.error && "text-red-700")}>
+              {fmtWhen(run.started_at)} · {scopeLabel(run)} ·{" "}
+              {run.finished_at ? runLine(run) : "running"}
+              {run.stats?.signed_no_stripe ? ` · ${run.stats.signed_no_stripe} signed without Stripe` : ""}
+              {run.error ? ` · ${run.error}` : ""}
+            </div>
+            {(run.stats?.changes ?? []).length > 0 && (
+              <ul className="mt-1 ml-4 list-disc text-gray-500">
+                {run.stats.changes!.map((c) => (
+                  <li key={`${run.id}-${c.id}`}>
+                    {c.name} ({c.source === "docusign" ? "DocuSign" : "Stripe"}): {c.from} → {c.to}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 function Integration({ ok, label }: { ok: boolean; label: string }) {
