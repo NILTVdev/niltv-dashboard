@@ -6,7 +6,7 @@ import Image from "next/image";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -19,14 +19,15 @@ export default function LoginPage() {
     const res = await fetch("/api/auth", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ email, password }),
     });
 
+    const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      router.push("/");
+      router.push(data.home ?? "/");
       router.refresh();
     } else {
-      setError("Invalid username or password.");
+      setError(data.error ?? "Invalid email or password.");
       setLoading(false);
     }
   }
@@ -52,9 +53,9 @@ export default function LoginPage() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <input
             type="text"
-            placeholder="Username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
             required
             autoComplete="username"
             className="w-full px-4 py-2.5 rounded-lg border border-[#e2e8f0] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand)] focus:border-transparent"

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authDisabled } from "@/lib/serverEnv";
-import { isValidSession } from "@/lib/session";
+import { canSeePage, homeFor } from "@/lib/access";
+import { SESSION_COOKIE, getSession } from "@/lib/session";
 
 // Hostnames the dashboard used to be served from, redirected permanently to
 // where it lives now. Remove once the old domain association is deleted.
@@ -34,16 +35,23 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // The cookie must carry the current session token, not merely exist.
-  const token = request.cookies.get("auth_token")?.value;
-  if (!(await isValidSession(token))) {
+  // The cookie must carry a signed, unexpired session, not merely exist.
+  const token = request.cookies.get(SESSION_COOKIE)?.value;
+  const session = await getSession(token);
+  if (!session) {
     if (pathname.startsWith("/api/")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     const loginUrl = new URL("/login", request.url);
     const res = NextResponse.redirect(loginUrl);
-    if (token) res.cookies.delete("auth_token");
+    if (token) res.cookies.delete(SESSION_COOKIE);
     return res;
+  }
+
+  // Pages the role can't see send it to its home page. API routes check the
+  // role themselves (proxy, uploads) and the backend checks every call.
+  if (!pathname.startsWith("/api/") && !canSeePage(session.role, pathname)) {
+    return NextResponse.redirect(new URL(homeFor(session.role), request.url));
   }
 
   return NextResponse.next();

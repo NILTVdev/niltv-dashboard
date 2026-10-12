@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { LogOut } from "lucide-react";
+import { LogOut, UserCircle, Users } from "lucide-react";
+import { canSeePage, ROLE_LABEL, type SessionUser } from "@/lib/access";
 import { useBrand } from "@/components/BrandProvider";
 import { BRANDS, routeForBrand, type BrandKey } from "@/lib/brands";
 
@@ -14,8 +16,21 @@ export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
   const { brand, setBrand } = useBrand();
+  const [me, setMe] = useState<SessionUser | null>(null);
+
+  // Who is signed in: drives which links show. Re-read on navigation so a
+  // fresh sign-in under another account is picked up.
+  useEffect(() => {
+    if (pathname === "/login") return;
+    fetch("/api/auth")
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setMe)
+      .catch(() => setMe(null));
+  }, [pathname]);
 
   if (pathname === "/login") return null;
+
+  const links = me ? brand.links.filter((l) => canSeePage(me.role, l.href)) : [];
 
   async function handleLogout() {
     await fetch("/api/auth", { method: "DELETE" });
@@ -51,7 +66,7 @@ export default function Navbar() {
         </Link>
 
         <nav className="flex gap-1 flex-1">
-          {brand.links.map((l) => (
+          {links.map((l) => (
             <Link
               key={l.href}
               href={l.href}
@@ -90,6 +105,26 @@ export default function Navbar() {
             </button>
           ))}
         </div>
+
+        {me?.role === "admin" && (
+          <Link href="/users" title="Dashboard accounts"
+                className={cn("flex items-center gap-1.5 px-2 py-1.5 rounded-md text-sm font-medium transition-colors",
+                  pathname === "/users" ? "bg-white/20" : "text-white/80 hover:bg-white/10")}>
+            <Users size={16} />
+            Users
+          </Link>
+        )}
+        {me && (
+          <Link href="/account" title={`${me.email} · ${ROLE_LABEL[me.role]}`}
+                className={cn("flex items-center gap-1.5 px-2 py-1.5 rounded-md text-sm font-medium transition-colors whitespace-nowrap",
+                  pathname === "/account" ? "bg-white/20" : "text-white/80 hover:bg-white/10")}>
+            <UserCircle size={16} />
+            <span className="max-w-[9rem] truncate">{me.name}</span>
+            <span className="rounded bg-white/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+              {ROLE_LABEL[me.role]}
+            </span>
+          </Link>
+        )}
 
         <button
           onClick={handleLogout}
