@@ -42,6 +42,16 @@ const STATUS_STYLE: Record<ApplicationStatus, string> = {
   accepted: "bg-emerald-50 text-emerald-800 ring-emerald-200",
 };
 
+type BulkAction = "agreement" | "stripe";
+interface BulkProgress { action: BulkAction; done: number; total: number; failed: { name: string; error: string }[] }
+
+// Which rows each bulk action applies to; matches the backend's status checks
+// in send_agreement / start_stripe.
+const BULK: Record<BulkAction, { label: string; endpoint: string; statuses: ApplicationStatus[] }> = {
+  agreement: { label: "Resend agreement", endpoint: "resend-agreement", statuses: ["approved", "agreement_sent"] },
+  stripe: { label: "Resend Stripe link", endpoint: "resend-stripe-link", statuses: ["signed", "stripe_pending"] },
+};
+
 // Filter tab -> what "Refresh category" re-checks (see backend reconcile.SCOPES).
 const CATEGORY_SCOPE: Record<string, string> = {
   open: "open",
@@ -69,6 +79,20 @@ function fmtWhen(iso: string | null | undefined): string {
   return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
+// Bulk sends report a provider failure in the body ("error") with a 200, so
+// they read the whole response instead of going through act().
+async function bulkAct(id: number, endpoint: string): Promise<Application> {
+  const res = await fetch(`/api/proxy/api/applications/${id}/${endpoint}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.detail ?? `HTTP ${res.status}`);
+  if (data.error) throw new Error(String(data.error));
+  return data.application as Application;
+}
+
 async function act(id: number, action: string, body?: unknown): Promise<Application> {
   const res = await fetch(`/api/proxy/api/applications/${id}/${action}`, {
     method: "POST",
@@ -89,6 +113,9 @@ export default function OnboardingView({ initial, summary }: Props) {
   const [search, setSearch] = useState("");
   const [openId, setOpenId] = useState<number | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [confirmBulk, setConfirmBulk] = useState<BulkAction | null>(null);
+  const [bulk, setBulk] = useState<BulkProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [runs, setRuns] = useState<ReconcileRun[]>([]);
   const [showRuns, setShowRuns] = useState(false);
@@ -200,6 +227,62 @@ export default function OnboardingView({ initial, summary }: Props) {
       setError(e instanceof Error ? e.message : String(e));
       loadRuns().catch(() => {});
     }
+  }
+
+  // Multi-select: a new status tab starts a new selection, so nothing hidden
+  // by the tab is ever sent by mistake.
+  useEffect(() => {
+    setSelected(new Set());
+    setConfirmBulk(null);
+  }, [filter]);
+
+  function toggleSelected(id: number) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  const bulkRunning = !!bulk && bulk.done < bulk.total;
+  const allVisibleSelected = filtered.length > 0 && filtered.every((r) => selected.has(r.id));
+  function toggleAllVisible() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const r of filtered) {
+        if (allVisibleSelected) next.delete(r.id);
+        else next.add(r.id);
+      }
+      return next;
+    });
+  }
+
+  const selectedRows = rows.filter((r) => selected.has(r.id));
+  const eligible = (action: BulkAction) => selectedRows.filter((r) => BULK[action].statuses.includes(r.status));
+
+  // One request per athlete through the same endpoints as the row buttons,
+  // so every send lands in that athlete's timeline. Sequential on purpose:
+  // DocuSign and Stripe both rate-limit bursts.
+  async function runBulk(action: BulkAction) {
+    const targets = eligible(action);
+    setConfirmBulk(null);
+    setError(null);
+    setBulk({ action, done: 0, total: targets.length, failed: [] });
+    const failed: { name: string; error: string }[] = [];
+    for (let i = 0; i < targets.length; i++) {
+      const r = targets[i];
+      try {
+        replace(await bulkAct(r.id, BULK[action].endpoint));
+      } catch (e) {
+        failed.push({
+          name: `${r.first_name ?? ""} ${r.last_name ?? ""}`.trim() || r.email,
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+      setBulk({ action, done: i + 1, total: targets.length, failed: [...failed] });
+    }
+    setSelected(new Set());
   }
 
   async function toggle(id: number) {
@@ -332,10 +415,31 @@ export default function OnboardingView({ initial, summary }: Props) {
         </div>
       )}
 
+      {(selected.size > 0 || bulk) && (
+        <BulkBar
+          count={selected.size}
+          agreement={eligible("agreement")}
+          stripe={eligible("stripe")}
+          confirm={confirmBulk}
+          progress={bulk}
+          onAsk={setConfirmBulk}
+          onRun={runBulk}
+          onClear={() => {
+            setSelected(new Set());
+            setConfirmBulk(null);
+            setBulk(null);
+          }}
+        />
+      )}
+
       <div className="overflow-x-auto rounded-xl border bg-white shadow-sm">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
             <tr>
+              <th className="pl-3 py-2 w-6">
+                <input type="checkbox" aria-label="Select all shown" checked={allVisibleSelected}
+                       onChange={toggleAllVisible} disabled={filtered.length === 0 || bulkRunning} />
+              </th>
               <th className="px-3 py-2 w-8" />
               <th className="px-3 py-2">Athlete</th>
               <th className="px-3 py-2">School / Sport</th>
@@ -349,7 +453,7 @@ export default function OnboardingView({ initial, summary }: Props) {
           <tbody className="divide-y">
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-3 py-10 text-center text-gray-400">
+                <td colSpan={9} className="px-3 py-10 text-center text-gray-400">
                   {rows.length === 0 ? "No applications yet. The signup form on niltv.com posts here." : "Nothing matches these filters."}
                 </td>
               </tr>
@@ -360,6 +464,10 @@ export default function OnboardingView({ initial, summary }: Props) {
               return (
                 <RowGroup key={r.id} open={open}>
                   <tr className={cn("hover:bg-gray-50 cursor-pointer", open && "bg-[var(--brand-pale)]/40")} onClick={() => toggle(r.id)}>
+                    <td className="pl-3 py-2" onClick={(e) => e.stopPropagation()}>
+                      <input type="checkbox" aria-label={`Select ${r.first_name ?? ""} ${r.last_name ?? ""}`}
+                             checked={selected.has(r.id)} onChange={() => toggleSelected(r.id)} disabled={bulkRunning} />
+                    </td>
                     <td className="px-3 py-2 text-gray-400">{open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</td>
                     <td className="px-3 py-2">
                       <div className="font-medium">{r.first_name} {r.last_name}</div>
@@ -389,7 +497,7 @@ export default function OnboardingView({ initial, summary }: Props) {
                   </tr>
                   {open && (
                     <tr className="bg-[var(--brand-pale)]/30">
-                      <td colSpan={8} className="px-6 py-4">
+                      <td colSpan={9} className="px-6 py-4">
                         <Detail row={r} busy={busy === r.id} onRun={(a, b) => run(r.id, a, b)} />
                       </td>
                     </tr>
@@ -406,6 +514,70 @@ export default function OnboardingView({ initial, summary }: Props) {
 
 function RowGroup({ children }: { open: boolean; children: React.ReactNode }) {
   return <>{children}</>;
+}
+
+function BulkBar({ count, agreement, stripe, confirm, progress, onAsk, onRun, onClear }: {
+  count: number;
+  agreement: Application[];
+  stripe: Application[];
+  confirm: BulkAction | null;
+  progress: BulkProgress | null;
+  onAsk: (a: BulkAction | null) => void;
+  onRun: (a: BulkAction) => void;
+  onClear: () => void;
+}) {
+  if (progress) {
+    const running = progress.done < progress.total;
+    const sent = progress.done - progress.failed.length;
+    return (
+      <div className="mb-3 rounded-lg border bg-white px-3 py-2 text-sm shadow-sm">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="font-semibold">
+            {BULK[progress.action].label}: {running ? `sending ${progress.done + 1} of ${progress.total}` : `${sent} sent`}
+            {progress.failed.length > 0 && <span className="text-red-700">, {progress.failed.length} failed</span>}
+          </span>
+          {!running && <Btn onClick={onClear}>Done</Btn>}
+        </div>
+        {progress.failed.length > 0 && (
+          <ul className="mt-1 ml-4 list-disc text-xs text-red-700">
+            {progress.failed.map((f) => <li key={f.name}>{f.name}: {f.error}</li>)}
+          </ul>
+        )}
+      </div>
+    );
+  }
+  const target = confirm === "agreement" ? agreement : stripe;
+  const noStripeYet = stripe.filter((r) => !r.stripe_account_id).length;
+  const plural = (n: number) => (n === 1 ? "athlete" : "athletes");
+  return (
+    <div className="mb-3 rounded-lg border bg-white px-3 py-2 text-sm shadow-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-semibold mr-1">{count} selected</span>
+        <Btn disabled={agreement.length === 0} onClick={() => onAsk("agreement")}
+             title="Re-send the DocuSign agreement to the selected athletes still waiting to sign">
+          <Send className="h-3.5 w-3.5" /> Resend agreement ({agreement.length})
+        </Btn>
+        <Btn disabled={stripe.length === 0} onClick={() => onAsk("stripe")}
+             title="Email the payout link to the selected athletes who signed but have not finished Stripe">
+          <Send className="h-3.5 w-3.5" /> Resend Stripe link ({stripe.length})
+        </Btn>
+        <Btn onClick={onClear}>Clear</Btn>
+      </div>
+      {confirm && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200">
+          <span>
+            {confirm === "agreement"
+              ? `Send the agreement again to ${target.length} ${plural(target.length)}? Each one gets a DocuSign email.`
+              : `Email the payout link to ${target.length} ${plural(target.length)}?`}
+            {confirm === "stripe" && noStripeYet > 0 && ` ${noStripeYet} of them have no Stripe account yet. One is created for each.`}
+            {count > target.length && " Selected athletes at other steps are skipped."}
+          </span>
+          <Btn tone="primary" onClick={() => onRun(confirm)}>Send</Btn>
+          <Btn onClick={() => onAsk(null)}>Cancel</Btn>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function scopeLabel(run: ReconcileRun): string {

@@ -238,7 +238,8 @@ class Settings(BaseSettings):
     reply_to_email: str = "contact@niltv.com"
     # Logo in the branded email header; empty = <site_base>/assets/img/niltv-logo-email.png
     email_logo_url: str = ""
-    # Staff inbox told about each new applicant. Empty = no notification.
+    # Staff told about each new applicant: one address or a comma-separated
+    # list (each gets its own copy). Empty = no notification.
     applications_notify_email: str = ""
     # Google Sheets: the staff mirror of the applications table (export job,
     # every 15 min) and the service-account json (falls back to the GA4 one).
