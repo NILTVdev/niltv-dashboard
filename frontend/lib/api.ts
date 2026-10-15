@@ -13,10 +13,15 @@ import { cookies } from "next/headers";
 import { BACKEND_URL as BASE } from "./serverEnv";
 import { backendHeaders, getSession, SESSION_COOKIE } from "./session";
 
+/** The account viewing this page (server components only). */
+export async function viewerSession() {
+  const jar = await cookies();
+  return getSession(jar.get(SESSION_COOKIE)?.value);
+}
+
 /** Backend headers for the account viewing this page (X-API-Key + X-Dashboard-User). */
 async function viewerHeaders(): Promise<Record<string, string>> {
-  const jar = await cookies();
-  return backendHeaders(await getSession(jar.get(SESSION_COOKIE)?.value));
+  return backendHeaders(await viewerSession());
 }
 
 async function apiFetch<T>(path: string): Promise<T> {

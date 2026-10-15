@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { homeFor, type Role, type SessionUser } from "@/lib/access";
+import { HOME, type Role, type SessionUser } from "@/lib/access";
 import { authDisabled, BACKEND_URL } from "@/lib/serverEnv";
 import { backendHeaders, getSession, makeSessionToken, SESSION_COOKIE } from "@/lib/session";
 
@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
   }
 
   const { token, maxAge } = await makeSessionToken(user);
-  const response = NextResponse.json({ ok: true, home: homeFor(user.role) });
+  const response = NextResponse.json({ ok: true, home: HOME });
   response.cookies.set(SESSION_COOKIE, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authDisabled } from "@/lib/serverEnv";
-import { canSeePage, homeFor } from "@/lib/access";
+import { canSeePage, HOME } from "@/lib/access";
 import { SESSION_COOKIE, getSession } from "@/lib/session";
 
 // Hostnames the dashboard used to be served from, redirected permanently to
@@ -51,7 +51,7 @@ export async function middleware(request: NextRequest) {
   // Pages the role can't see send it to its home page. API routes check the
   // role themselves (proxy, uploads) and the backend checks every call.
   if (!pathname.startsWith("/api/") && !canSeePage(session.role, pathname)) {
-    return NextResponse.redirect(new URL(homeFor(session.role), request.url));
+    return NextResponse.redirect(new URL(HOME, request.url));
   }
 
   return NextResponse.next();
