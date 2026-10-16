@@ -576,3 +576,33 @@ export interface ApplicationsSummary {
     email: boolean;
   };
 }
+
+export interface ReconcileChange {
+  id: number;
+  name: string;
+  source: "docusign" | "stripe";
+  from: string;
+  to: string;
+}
+
+/** One "Refresh all" / nightly re-check of every open application. */
+export interface ReconcileRun {
+  id: number;
+  trigger: "nightly" | "staff";
+  triggered_by: string | null;
+  started_at: string;
+  finished_at: string | null;
+  error: string | null;
+  stats: {
+    scope?: "all" | "open" | "agreement_sent" | "stripe_pending" | "accepted";
+    rows?: number;
+    docusign_checked?: number;
+    stripe_checked?: number;
+    changed?: number;
+    signed?: number;
+    accepted?: number;
+    signed_no_stripe?: number;
+    errors?: number;
+    changes?: ReconcileChange[];
+  };
+}

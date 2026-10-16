@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
+import { athletePath } from "@/lib/channels";
 // v9 migration: the /legacy entry point is TanStack's official v8-compat
 // layer (same options shape, ColumnDef arity, get*RowModel stubs). New
 // tables should use the v9-native useTable + features API instead.
@@ -50,7 +51,7 @@ export default function RosterTable({ athletes, sports }: Props) {
         header: "Name",
         cell: ({ row }) => (
           <Link
-            href={`/athletes/${row.original.id}`}
+            href={athletePath(row.original.id)}
             className="font-medium text-[var(--brand)] hover:underline"
           >
             {row.original.name}

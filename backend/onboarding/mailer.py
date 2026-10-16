@@ -55,7 +55,7 @@ def _layout(inner: str, preheader: str = "") -> str:
     )
 
 
-def _send(to: str, subject: str, text: str, html_body: str, preheader: str = "") -> bool:
+def _send(to: str | list[str], subject: str, text: str, html_body: str, preheader: str = "") -> bool:
     s = get_settings()
     if not s.from_email or not to:
         log.info("mailer: skipped (no from_email or recipient) subject=%s", subject)
@@ -66,7 +66,7 @@ def _send(to: str, subject: str, text: str, html_body: str, preheader: str = "")
         client = boto3.client("sesv2", region_name=s.aws_region)
         kwargs = {
             "FromEmailAddress": f"NIL TV <{s.from_email}>",
-            "Destination": {"ToAddresses": [to]},
+            "Destination": {"ToAddresses": to if isinstance(to, list) else [to]},
             "Content": {"Simple": {
                 "Subject": {"Data": subject},
                 "Body": {"Text": {"Data": text}, "Html": {"Data": _layout(html_body, preheader)}},
@@ -127,27 +127,30 @@ def send_powerform_agreement(to: str, first_name: str, url: str) -> bool:
 
 def send_application_received(to: str, first_name: str) -> bool:
     name = first_name or "there"
-    subject = "NIL TV: we have your application"
+    subject = "Thanks for applying to be an NIL TV athlete"
     text = (
-        f"Hi {name},\n\nThanks for applying to the NIL TV athlete program. We have your application "
-        "and every update comes to this address.\n\nWhat happens next:\n"
+        f"Hi {name},\n\nThank you for applying to be an NIL TV athlete, and thank you for your time. "
+        "We have your application and will be in touch shortly with our decision. "
+        "Every update comes to this address.\n\nWhat happens next:\n"
         "1. NIL TV reviews your application.\n"
         "2. If you are accepted, you get the NIL TV Ambassador Agreement to sign electronically.\n"
         "3. After you sign, you get a link to set up payouts with Stripe.\n\n"
-        "Questions? Reach us at https://niltv.com/contact/\n\nNIL TV\n"
+        "Happy creating!\n\nQuestions? Reach us at https://niltv.com/contact/\n\nNIL TV\n"
     )
     body = (
         f'<p style="margin:0 0 14px">Hi {html.escape(name)},</p>'
-        '<p style="margin:0 0 14px">Thanks for applying to the NIL TV athlete program. We have your '
-        "application and every update comes to this address.</p>"
+        '<p style="margin:0 0 14px">Thank you for applying to be an NIL TV athlete, and thank you for '
+        "your time. We have your application and will be in touch shortly with our decision. "
+        "Every update comes to this address.</p>"
         '<p style="margin:0 0 6px;font-weight:700">What happens next</p>'
         '<ol style="margin:0 0 18px;padding-left:22px"><li style="margin:0 0 6px">NIL TV reviews your application.</li>'
         '<li style="margin:0 0 6px">If you are accepted, you get the NIL TV Ambassador Agreement to sign electronically.</li>'
         '<li style="margin:0">After you sign, you get a link to set up payouts with Stripe.</li></ol>'
+        '<p style="margin:0 0 18px;font-weight:700">Happy creating!</p>'
         f'<p style="{_MUTED};margin:0 0 10px">Questions? <a href="https://niltv.com/contact/" style="color:#111">Contact NIL TV</a>.</p>'
         f'<p style="{_MUTED};margin:0">NIL TV</p>'
     )
-    return _send(to, subject, text, body, preheader="We have your application. Here is what happens next.")
+    return _send(to, subject, text, body, preheader="We have your application. We will be in touch shortly with our decision.")
 
 
 def send_declined(to: str, first_name: str) -> bool:
@@ -168,7 +171,7 @@ def send_declined(to: str, first_name: str) -> bool:
 
 
 def notify_staff_new_applicant(summary: str, dashboard_url: str) -> bool:
-    to = get_settings().applications_notify_email
+    to = [a.strip() for a in get_settings().applications_notify_email.split(",") if a.strip()]
     if not to:
         return False
     text = f"New athlete application:\n\n{summary}\n\nReview: {dashboard_url}\n"

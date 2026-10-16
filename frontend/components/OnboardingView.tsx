@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { cn, fmtDate } from "@/lib/utils";
 import type {
-  Application, ApplicationEvent, ApplicationStatus, ApplicationStep, ApplicationsSummary,
+  Application, ApplicationEvent, ApplicationStatus, ApplicationStep, ApplicationsSummary, ReconcileRun,
 } from "@/lib/types";
 
 interface Props {
@@ -48,6 +48,25 @@ const STATUS_STYLE: Record<ApplicationStatus, string> = {
   accepted: DONE,
 };
 
+type BulkAction = "agreement" | "stripe";
+interface BulkProgress { action: BulkAction; done: number; total: number; failed: { name: string; error: string }[] }
+
+// Which rows each bulk action applies to; matches the backend's status checks
+// in send_agreement / start_stripe.
+const BULK: Record<BulkAction, { label: string; endpoint: string; statuses: ApplicationStatus[] }> = {
+  agreement: { label: "Resend agreement", endpoint: "resend-agreement", statuses: ["approved", "agreement_sent"] },
+  stripe: { label: "Resend Stripe link", endpoint: "resend-stripe-link", statuses: ["signed", "stripe_pending"] },
+};
+
+// Filter tab -> what "Refresh category" re-checks (see backend reconcile.SCOPES).
+const CATEGORY_SCOPE: Record<string, string> = {
+  open: "open",
+  agreement_sent: "agreement_sent",
+  stripe_pending: "stripe_pending",
+  accepted: "accepted",
+  all: "all",
+};
+
 // Filter chips in pipeline order. "open" = everything still moving.
 const FILTERS: { key: string; label: string }[] = [
   { key: "open", label: "Open" },
@@ -64,6 +83,20 @@ function fmtWhen(iso: string | null | undefined): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+// Bulk sends report a provider failure in the body ("error") with a 200, so
+// they read the whole response instead of going through act().
+async function bulkAct(id: number, endpoint: string): Promise<Application> {
+  const res = await fetch(`/api/proxy/api/applications/${id}/${endpoint}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.detail ?? `HTTP ${res.status}`);
+  if (data.error) throw new Error(String(data.error));
+  return data.application as Application;
 }
 
 async function act(id: number, action: string, body?: unknown): Promise<Application> {
@@ -86,7 +119,12 @@ export default function OnboardingView({ initial, summary }: Props) {
   const [search, setSearch] = useState("");
   const [openId, setOpenId] = useState<number | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [confirmBulk, setConfirmBulk] = useState<BulkAction | null>(null);
+  const [bulk, setBulk] = useState<BulkProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [runs, setRuns] = useState<ReconcileRun[]>([]);
+  const [showRuns, setShowRuns] = useState(false);
 
   // Staff notification emails link to ?id=<n>; open that row on arrival.
   useEffect(() => {
@@ -150,6 +188,109 @@ export default function OnboardingView({ initial, summary }: Props) {
     }
   }
 
+  // "Refresh all" = the nightly reconcile, on demand. It runs in the
+  // background on the API; poll the run list until it finishes, then reload
+  // the rows it may have moved.
+  async function loadRuns(): Promise<ReconcileRun[]> {
+    const res = await fetch("/api/proxy/api/applications/reconcile/runs?limit=10");
+    const data = res.ok ? ((await res.json()) as ReconcileRun[]) : [];
+    setRuns(data);
+    return data;
+  }
+
+  useEffect(() => {
+    loadRuns().catch(() => {});
+  }, []);
+
+  const lastRun = runs[0];
+  // A run unfinished after 15 minutes died with the process (same rule as the API).
+  const refreshing = !!lastRun && !lastRun.finished_at
+    && Date.now() - new Date(lastRun.started_at).getTime() < 15 * 60_000;
+
+  // Filter tab -> reconcile scope. Applicants and declined rows have nothing
+  // waiting on DocuSign or Stripe.
+  const categoryScope = CATEGORY_SCOPE[filter] ?? null;
+
+  async function refreshRows(scope: string) {
+    setError(null);
+    try {
+      const res = await fetch(`/api/proxy/api/applications/reconcile?scope=${encodeURIComponent(scope)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.detail ?? `HTTP ${res.status}`);
+      setRuns((prev) => [data as ReconcileRun, ...prev]);
+      for (let i = 0; i < 300; i++) { // 15 minutes, the API's stale-run limit
+        await new Promise((r) => setTimeout(r, 3000));
+        const latest = (await loadRuns()).find((r) => r.id === data.id);
+        if (!latest || latest.finished_at) break;
+      }
+      const list = await fetch("/api/proxy/api/applications/?status=all&limit=2000");
+      if (list.ok) setRows((await list.json()) as Application[]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      loadRuns().catch(() => {});
+    }
+  }
+
+  // Multi-select: a new status tab starts a new selection, so nothing hidden
+  // by the tab is ever sent by mistake.
+  useEffect(() => {
+    setSelected(new Set());
+    setConfirmBulk(null);
+  }, [filter]);
+
+  function toggleSelected(id: number) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  const bulkRunning = !!bulk && bulk.done < bulk.total;
+  const allVisibleSelected = filtered.length > 0 && filtered.every((r) => selected.has(r.id));
+  function toggleAllVisible() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const r of filtered) {
+        if (allVisibleSelected) next.delete(r.id);
+        else next.add(r.id);
+      }
+      return next;
+    });
+  }
+
+  const selectedRows = rows.filter((r) => selected.has(r.id));
+  const eligible = (action: BulkAction) => selectedRows.filter((r) => BULK[action].statuses.includes(r.status));
+
+  // One request per athlete through the same endpoints as the row buttons,
+  // so every send lands in that athlete's timeline. Sequential on purpose:
+  // DocuSign and Stripe both rate-limit bursts.
+  async function runBulk(action: BulkAction) {
+    const targets = eligible(action);
+    setConfirmBulk(null);
+    setError(null);
+    setBulk({ action, done: 0, total: targets.length, failed: [] });
+    const failed: { name: string; error: string }[] = [];
+    for (let i = 0; i < targets.length; i++) {
+      const r = targets[i];
+      try {
+        replace(await bulkAct(r.id, BULK[action].endpoint));
+      } catch (e) {
+        failed.push({
+          name: `${r.first_name ?? ""} ${r.last_name ?? ""}`.trim() || r.email,
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+      setBulk({ action, done: i + 1, total: targets.length, failed: [...failed] });
+    }
+    setSelected(new Set());
+  }
+
   async function toggle(id: number) {
     if (openId === id) {
       setOpenId(null);
@@ -192,7 +333,8 @@ export default function OnboardingView({ initial, summary }: Props) {
       {/* Filters: status tabs on their own row; school/sport + search on the
           next. One wrapping row used to strand the search box on a second
           line, right-aligned by ml-auto, at tablet widths. */}
-      <div className="mb-2 flex flex-wrap gap-1 rounded-lg bg-gray-100 p-1 w-fit max-w-full">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap gap-1 rounded-lg bg-gray-100 p-1 w-fit max-w-full">
         {FILTERS.map((f) => (
           <button
             key={f.key}
@@ -207,6 +349,32 @@ export default function OnboardingView({ initial, summary }: Props) {
           </button>
         ))}
       </div>
+        <div className="flex items-center gap-2 sm:ml-auto">
+          <Btn
+            disabled={refreshing || !categoryScope}
+            onClick={() => categoryScope && refreshRows(categoryScope)}
+            title={categoryScope
+              ? `Re-check the ${FILTERS.find((f) => f.key === filter)?.label ?? ""} tab against DocuSign and Stripe`
+              : "Nothing in this tab is waiting on DocuSign or Stripe"}
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} /> Refresh category
+          </Btn>
+          <Btn disabled={refreshing} onClick={() => refreshRows("all")}
+               title="Re-check every row against DocuSign and Stripe (also runs nightly)">
+            <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} /> Refresh all
+          </Btn>
+        </div>
+      </div>
+      {lastRun && (
+        <div className="mb-2 text-right">
+          <button onClick={() => setShowRuns((v) => !v)} className="text-xs text-gray-500 hover:text-gray-800 underline-offset-2 hover:underline">
+            {refreshing
+              ? "Refreshing…"
+              : `Last refresh ${fmtWhen(lastRun.finished_at)} · ${scopeLabel(lastRun)}: ${runLine(lastRun)}`}
+          </button>
+        </div>
+      )}
+      {showRuns && runs.length > 0 && <RunLog runs={runs} />}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <select value={school} onChange={(e) => setSchool(e.target.value)} className="h-9 rounded-md border px-2 text-sm bg-white">
           <option value="all">Schools ({schools.length})</option>
@@ -236,10 +404,31 @@ export default function OnboardingView({ initial, summary }: Props) {
         </div>
       )}
 
+      {(selected.size > 0 || bulk) && (
+        <BulkBar
+          count={selected.size}
+          agreement={eligible("agreement")}
+          stripe={eligible("stripe")}
+          confirm={confirmBulk}
+          progress={bulk}
+          onAsk={setConfirmBulk}
+          onRun={runBulk}
+          onClear={() => {
+            setSelected(new Set());
+            setConfirmBulk(null);
+            setBulk(null);
+          }}
+        />
+      )}
+
       <div className="overflow-x-auto rounded-xl border bg-white shadow-sm">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
             <tr>
+              <th className="pl-3 py-2 w-6">
+                <input type="checkbox" aria-label="Select all shown" checked={allVisibleSelected}
+                       onChange={toggleAllVisible} disabled={filtered.length === 0 || bulkRunning} />
+              </th>
               <th className="px-3 py-2 w-8" />
               <th className="px-3 py-2">Athlete</th>
               <th className="px-3 py-2">School / Sport</th>
@@ -253,7 +442,7 @@ export default function OnboardingView({ initial, summary }: Props) {
           <tbody className="divide-y">
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-3 py-10 text-center text-gray-400">
+                <td colSpan={9} className="px-3 py-10 text-center text-gray-400">
                   {rows.length === 0 ? "No applications yet. The signup form on niltv.com posts here." : "Nothing matches these filters."}
                 </td>
               </tr>
@@ -264,6 +453,10 @@ export default function OnboardingView({ initial, summary }: Props) {
               return (
                 <RowGroup key={r.id} open={open}>
                   <tr className={cn("hover:bg-gray-50 cursor-pointer", open && "bg-[var(--brand-pale)]/40")} onClick={() => toggle(r.id)}>
+                    <td className="pl-3 py-2" onClick={(e) => e.stopPropagation()}>
+                      <input type="checkbox" aria-label={`Select ${r.first_name ?? ""} ${r.last_name ?? ""}`}
+                             checked={selected.has(r.id)} onChange={() => toggleSelected(r.id)} disabled={bulkRunning} />
+                    </td>
                     <td className="px-3 py-2 text-gray-400">{open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</td>
                     <td className="px-3 py-2">
                       <div className="font-medium">{r.first_name} {r.last_name}</div>
@@ -293,7 +486,7 @@ export default function OnboardingView({ initial, summary }: Props) {
                   </tr>
                   {open && (
                     <tr className="bg-[var(--brand-pale)]/30">
-                      <td colSpan={8} className="px-6 py-4">
+                      <td colSpan={9} className="px-6 py-4">
                         <Detail row={r} busy={busy === r.id} onRun={(a, b) => run(r.id, a, b)} />
                       </td>
                     </tr>
@@ -310,6 +503,116 @@ export default function OnboardingView({ initial, summary }: Props) {
 
 function RowGroup({ children }: { open: boolean; children: React.ReactNode }) {
   return <>{children}</>;
+}
+
+function BulkBar({ count, agreement, stripe, confirm, progress, onAsk, onRun, onClear }: {
+  count: number;
+  agreement: Application[];
+  stripe: Application[];
+  confirm: BulkAction | null;
+  progress: BulkProgress | null;
+  onAsk: (a: BulkAction | null) => void;
+  onRun: (a: BulkAction) => void;
+  onClear: () => void;
+}) {
+  if (progress) {
+    const running = progress.done < progress.total;
+    const sent = progress.done - progress.failed.length;
+    return (
+      <div className="mb-3 rounded-lg border bg-white px-3 py-2 text-sm shadow-sm">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="font-semibold">
+            {BULK[progress.action].label}: {running ? `sending ${progress.done + 1} of ${progress.total}` : `${sent} sent`}
+            {progress.failed.length > 0 && <span className="text-red-700">, {progress.failed.length} failed</span>}
+          </span>
+          {!running && <Btn onClick={onClear}>Done</Btn>}
+        </div>
+        {progress.failed.length > 0 && (
+          <ul className="mt-1 ml-4 list-disc text-xs text-red-700">
+            {progress.failed.map((f) => <li key={f.name}>{f.name}: {f.error}</li>)}
+          </ul>
+        )}
+      </div>
+    );
+  }
+  const target = confirm === "agreement" ? agreement : stripe;
+  const noStripeYet = stripe.filter((r) => !r.stripe_account_id).length;
+  const plural = (n: number) => (n === 1 ? "athlete" : "athletes");
+  return (
+    <div className="mb-3 rounded-lg border bg-white px-3 py-2 text-sm shadow-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-semibold mr-1">{count} selected</span>
+        <Btn disabled={agreement.length === 0} onClick={() => onAsk("agreement")}
+             title="Re-send the DocuSign agreement to the selected athletes still waiting to sign">
+          <Send className="h-3.5 w-3.5" /> Resend agreement ({agreement.length})
+        </Btn>
+        <Btn disabled={stripe.length === 0} onClick={() => onAsk("stripe")}
+             title="Email the payout link to the selected athletes who signed but have not finished Stripe">
+          <Send className="h-3.5 w-3.5" /> Resend Stripe link ({stripe.length})
+        </Btn>
+        <Btn onClick={onClear}>Clear</Btn>
+      </div>
+      {confirm && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200">
+          <span>
+            {confirm === "agreement"
+              ? `Send the agreement again to ${target.length} ${plural(target.length)}? Each one gets a DocuSign email.`
+              : `Email the payout link to ${target.length} ${plural(target.length)}?`}
+            {confirm === "stripe" && noStripeYet > 0 && ` ${noStripeYet} of them have no Stripe account yet. One is created for each.`}
+            {count > target.length && " Selected athletes at other steps are skipped."}
+          </span>
+          <Btn tone="primary" onClick={() => onRun(confirm)}>Send</Btn>
+          <Btn onClick={() => onAsk(null)}>Cancel</Btn>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function scopeLabel(run: ReconcileRun): string {
+  if (run.trigger === "nightly") return "Nightly";
+  const scope = run.stats?.scope ?? "all";
+  if (scope === "all") return "Refresh all";
+  return `Refresh ${FILTERS.find((f) => f.key === scope)?.label ?? scope}`;
+}
+
+function runLine(run: ReconcileRun): string {
+  const s = run.stats ?? {};
+  const checked = (s.docusign_checked ?? 0) + (s.stripe_checked ?? 0);
+  const parts = [`${checked} checked`, `${s.changed ?? 0} changed`];
+  if (s.errors || run.error) parts.push(`${s.errors ?? 0} errors`);
+  return parts.join(", ");
+}
+
+// Every change a run makes is a webhook that never arrived; a healthy
+// pipeline shows "0 changed" here night after night.
+function RunLog({ runs }: { runs: ReconcileRun[] }) {
+  return (
+    <div className="mb-5 rounded-xl border bg-white p-3 shadow-sm text-xs">
+      <div className="mb-2 font-semibold text-gray-700">Refresh log</div>
+      <ul className="space-y-2">
+        {runs.map((run) => (
+          <li key={run.id}>
+            <div className={cn("text-gray-700", run.error && "text-red-700")}>
+              {fmtWhen(run.started_at)} · {scopeLabel(run)} ·{" "}
+              {run.finished_at ? runLine(run) : "running"}
+              {run.stats?.signed_no_stripe ? ` · ${run.stats.signed_no_stripe} signed without Stripe` : ""}
+              {run.error ? ` · ${run.error}` : ""}
+            </div>
+            {(run.stats?.changes ?? []).length > 0 && (
+              <ul className="mt-1 ml-4 list-disc text-gray-500">
+                {run.stats.changes!.map((c) => (
+                  <li key={`${run.id}-${c.id}`}>
+                    {c.name} ({c.source === "docusign" ? "DocuSign" : "Stripe"}): {c.from} → {c.to}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 // Shown only when something is not set up; a configured integration says nothing.

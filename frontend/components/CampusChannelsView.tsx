@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowUpDown, Eye, FileText, Info, TrendingUp, TriangleAlert, Users } from "lucide-react";
+import Link from "next/link";
+import { ArrowUpDown, ChevronRight, Eye, FileText, Info, TrendingUp, TriangleAlert, Users } from "lucide-react";
 import {
   Bar,
   BarChart,
@@ -22,6 +23,7 @@ import type {
   CampusChannelWindowStats,
 } from "@/lib/types";
 import { fmt, fmtDate } from "@/lib/utils";
+import { CHANNEL_PAGES } from "@/lib/channels";
 
 const GOLD = "#C9A227";
 
@@ -331,7 +333,17 @@ export default function CampusChannelsView({ summary }: { summary: CampusChannel
                   <tr key={channel.channel} className="border-b border-[#f1f5f9] last:border-0 hover:bg-[#fdf9ee]">
                     <td className="py-3 pr-4 align-top">
                       <div className="font-medium text-[#0f172a] flex items-center gap-1.5">
-                        {channel.label}
+                        {CHANNEL_PAGES[channel.channel] ? (
+                          <Link
+                            href={CHANNEL_PAGES[channel.channel]}
+                            className="inline-flex items-center gap-0.5 underline decoration-[var(--brand-light)] decoration-2 underline-offset-4 hover:text-[var(--brand-light)] transition-colors"
+                          >
+                            {channel.label}
+                            <ChevronRight size={14} />
+                          </Link>
+                        ) : (
+                          channel.label
+                        )}
                         {flagged && (
                           <span
                             title="Most views for this channel come from Business Discovery or a public grid snapshot, which report a play count rather than the Graph/Business Suite views metric."

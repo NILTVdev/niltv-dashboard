@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.auth import require_api_key
 from backend.config import get_settings
 
-from backend.routers import athletes, snapshots, posts, zoomph, web_analytics, trueblue, reports, brand, ambassadors, network_screen, campus_channels, applications
+from backend.routers import athletes, snapshots, posts, zoomph, web_analytics, trueblue, reports, brand, ambassadors, network_screen, campus_channels, applications, users
 
 # The interactive docs and OpenAPI schema expose the full route map and auth
 # model, so they are served outside production only.
@@ -52,6 +52,8 @@ app.include_router(campus_channels.router, prefix="/api/campus-channels", tags=[
 # Public first: /webhooks/... must win over the admin /{application_id} routes.
 app.include_router(applications.public_router, prefix="/api/applications", tags=["applications"])
 app.include_router(applications.router, prefix="/api/applications", tags=["applications"])
+app.include_router(users.auth_router, prefix="/api/auth", tags=["auth"])
+app.include_router(users.router, prefix="/api/users", tags=["users"])
 
 
 @app.get("/api/health")
