@@ -670,15 +670,21 @@ function StepIcon({ state }: { state: ApplicationStep["state"] }) {
   }
 }
 
+// One plain dot per step: filled = done, ring = where the row is now, dash =
+// skipped. The status line says the rest; the tooltip spells out each step.
+const DOT: Record<ApplicationStep["state"], string> = {
+  done: "bg-slate-600",
+  current: "bg-white ring-2 ring-inset ring-slate-600",
+  blocked: "bg-white ring-2 ring-inset ring-gray-300",
+  skipped: "h-0.5 rounded-sm bg-gray-300",
+  todo: "bg-gray-200",
+};
+
 function Progress({ steps }: { steps: ApplicationStep[] }) {
+  const summary = steps.map((s) => `${s.label}: ${s.state}${s.detail ? ` (${s.detail})` : ""}`).join("\n");
   return (
-    <div className="flex items-center gap-1" title={steps.map((s) => `${s.label}: ${s.state}${s.detail ? ` (${s.detail})` : ""}`).join("\n")}>
-      {steps.map((s, i) => (
-        <div key={s.key} className="flex items-center">
-          <StepIcon state={s.state} />
-          {i < steps.length - 1 && <span className={cn("mx-0.5 h-px w-3", s.state === "done" ? "bg-emerald-400" : "bg-gray-200")} />}
-        </div>
-      ))}
+    <div className="flex items-center gap-1.5" title={summary} role="img" aria-label={summary}>
+      {steps.map((s) => <span key={s.key} className={cn("h-2 w-2 rounded-full", DOT[s.state])} />)}
     </div>
   );
 }
