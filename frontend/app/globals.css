@@ -12,17 +12,12 @@
   --font-sans: "Inter", system-ui, sans-serif;
 }
 
-/* Brand theme — consumed as arbitrary values (bg-[var(--brand)] etc.) so the
-   whole dashboard re-themes off html[data-brand], set pre-paint in layout.tsx.
-   recharts props can't resolve CSS vars; charts read hexes from useBrand(). */
+/* NIL TV theme, consumed as arbitrary values (bg-[var(--brand)] etc.).
+   recharts props can't resolve CSS vars; charts read the same hexes from
+   lib/theme.ts, so change both together. */
 :root {
-  --brand: #003087;        /* TrueBlue TV / Duke blue */
-  --brand-light: #00539b;
-  --brand-pale: #e8eef7;
-}
-html[data-brand="niltv"] {
-  --brand: #101014;        /* NIL TV network: near-black + brass gold */
-  --brand-light: #b4975a;
+  --brand: #101014;        /* near-black */
+  --brand-light: #b4975a;  /* brass gold */
   --brand-pale: #f6f2e9;
 }
 

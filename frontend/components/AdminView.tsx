@@ -1,5 +1,5 @@
 "use client";
-import { useBrand } from "@/components/BrandProvider";
+import { COLORS } from "@/lib/theme";
 import { formatLabel } from "@/lib/formatLabels";
 
 import { useState, useRef, useCallback, useMemo } from "react";
@@ -313,7 +313,6 @@ function WeeklyReportCard({ data }: { data: SummaryReportData }) {
 /* ── Monthly Report Visual Card ──────────────────────── */
 
 function MonthlyReportCard({ data }: { data: MonthlyReportData }) {
-  const { brand: uiBrand } = useBrand();
   const { stats, alltime, prev_stats, top_posts, gsc } = data;
   const s = stats.social;
   const g = stats.gsc;
@@ -393,7 +392,7 @@ function MonthlyReportCard({ data }: { data: MonthlyReportData }) {
                   contentStyle={{ fontSize: 11, borderRadius: 8, border: "1px solid #e2e8f0" }}
                 />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Line type="monotone" dataKey="views" name="Views" stroke={uiBrand.colors.brand} strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="views" name="Views" stroke={COLORS.brand} strokeWidth={2} dot={false} />
                 <Line type="monotone" dataKey="reach" name="Reach" stroke="#7c3aed" strokeWidth={2} dot={false} />
               </LineChart>
             </ResponsiveContainer>
@@ -410,8 +409,8 @@ function MonthlyReportCard({ data }: { data: MonthlyReportData }) {
               <AreaChart data={cumulativeImpressions} margin={{ top: 5, right: 5, bottom: 0, left: 0 }}>
                 <defs>
                   <linearGradient id="cumImpGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={uiBrand.colors.brand} stopOpacity={0.2} />
-                    <stop offset="95%" stopColor={uiBrand.colors.brand} stopOpacity={0} />
+                    <stop offset="5%" stopColor={COLORS.brand} stopOpacity={0.2} />
+                    <stop offset="95%" stopColor={COLORS.brand} stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -422,7 +421,7 @@ function MonthlyReportCard({ data }: { data: MonthlyReportData }) {
                   labelFormatter={(label: unknown) => fmtAxisMonthYear(String(label))}
                   contentStyle={{ fontSize: 11, borderRadius: 8 }}
                 />
-                <Area type="monotone" dataKey="value" name="Impressions" stroke={uiBrand.colors.brand} strokeWidth={2} fill="url(#cumImpGrad)" dot={false} />
+                <Area type="monotone" dataKey="value" name="Impressions" stroke={COLORS.brand} strokeWidth={2} fill="url(#cumImpGrad)" dot={false} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -560,8 +559,8 @@ function MonthlyReportCard({ data }: { data: MonthlyReportData }) {
             <AreaChart data={data.alltime_gsc_daily} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
               <defs>
                 <linearGradient id="alltimeImpGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={uiBrand.colors.brand} stopOpacity={0.2} />
-                  <stop offset="95%" stopColor={uiBrand.colors.brand} stopOpacity={0} />
+                  <stop offset="5%" stopColor={COLORS.brand} stopOpacity={0.2} />
+                  <stop offset="95%" stopColor={COLORS.brand} stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -572,7 +571,7 @@ function MonthlyReportCard({ data }: { data: MonthlyReportData }) {
                 labelFormatter={(label: unknown) => fmtAxis(String(label))}
                 contentStyle={{ fontSize: 12, borderRadius: 8 }}
               />
-              <Area type="monotone" dataKey="impressions" name="Impressions" stroke={uiBrand.colors.brand} strokeWidth={2} fill="url(#alltimeImpGrad)" dot={false} />
+              <Area type="monotone" dataKey="impressions" name="Impressions" stroke={COLORS.brand} strokeWidth={2} fill="url(#alltimeImpGrad)" dot={false} />
             </AreaChart>
           </ResponsiveContainer>
         </div>

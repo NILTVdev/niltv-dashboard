@@ -8,11 +8,25 @@ import type {
   GA4Summary, GSCSummary,
 } from "./types";
 
-import { API_KEY, BACKEND_URL as BASE } from "./serverEnv";
+import { cookies } from "next/headers";
+
+import { BACKEND_URL as BASE } from "./serverEnv";
+import { backendHeaders, getSession, SESSION_COOKIE } from "./session";
+
+/** The account viewing this page (server components only). */
+export async function viewerSession() {
+  const jar = await cookies();
+  return getSession(jar.get(SESSION_COOKIE)?.value);
+}
+
+/** Backend headers for the account viewing this page (X-API-Key + X-Dashboard-User). */
+async function viewerHeaders(): Promise<Record<string, string>> {
+  return backendHeaders(await viewerSession());
+}
 
 async function apiFetch<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
-    headers: { "X-API-Key": API_KEY },
+    headers: await viewerHeaders(),
     next: { revalidate: 300 },
   });
   if (!res.ok) throw new Error(`API ${path} → ${res.status}`);
@@ -90,7 +104,7 @@ export const getCampusChannelsSummary = () =>
 import type { Application, ApplicationsSummary } from "./types";
 
 async function apiFetchFresh<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, { headers: { "X-API-Key": API_KEY }, cache: "no-store" });
+  const res = await fetch(`${BASE}${path}`, { headers: await viewerHeaders(), cache: "no-store" });
   if (!res.ok) throw new Error(`API ${path} → ${res.status}`);
   return res.json() as Promise<T>;
 }

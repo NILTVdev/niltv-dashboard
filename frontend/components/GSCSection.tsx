@@ -1,5 +1,5 @@
 "use client";
-import { useBrand } from "@/components/BrandProvider";
+import { COLORS } from "@/lib/theme";
 
 import { useState, useMemo } from "react";
 import {
@@ -45,7 +45,6 @@ function SortHeader({
 }
 
 export default function GSCSection({ totals, summary }: Props) {
-  const { brand: uiBrand } = useBrand();
   // Daily totals are already one row per day — no aggregation needed
   const timeData = totals
     .map((t) => ({
@@ -122,7 +121,7 @@ export default function GSCSection({ totals, summary }: Props) {
               />
               <Tooltip contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Line type="monotone" dataKey="clicks" stroke={uiBrand.colors.brand} strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="clicks" stroke={COLORS.brand} strokeWidth={2} dot={false} />
               <Line type="monotone" dataKey="impressions" stroke="#94a3b8" strokeWidth={1.5} dot={false} />
             </LineChart>
           </ResponsiveContainer>

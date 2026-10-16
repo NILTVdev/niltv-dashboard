@@ -6,7 +6,7 @@ import Image from "next/image";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -19,45 +19,43 @@ export default function LoginPage() {
     const res = await fetch("/api/auth", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ email, password }),
     });
 
+    const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      router.push("/");
+      router.push(data.home ?? "/");
       router.refresh();
     } else {
-      setError("Invalid username or password.");
+      setError(data.error ?? "Invalid email or password.");
       setLoading(false);
     }
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#f8fafc]">
-      <div className="w-full max-w-sm bg-white rounded-2xl shadow-lg border border-[#e2e8f0] p-8">
+    // Fixed so the dark ground covers the whole window, not just the layout's <main> column.
+    <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center bg-[var(--brand)] px-4">
+      <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#17171c] p-8 shadow-2xl">
         <div className="flex justify-center mb-6">
-          <Image
-            src="https://i0.wp.com/truebluetv.com/wp-content/uploads/2025/07/TrueblueLogo.webp?w=320&ssl=1"
-            alt="TrueBlue TV"
-            width={200}
-            height={48}
-            priority
-          />
+          {/* Black-ground export; screen-blended into the dark card. */}
+          <Image src="/niltv-logo.png" alt="NIL TV" width={150} height={56}
+                 className="mix-blend-screen" priority />
         </div>
-        <h1 className="text-center text-lg font-semibold text-[#0f172a] mb-1">
-          NIL Dashboard
+        <h1 className="text-center text-lg font-semibold text-white mb-1">
+          Network Dashboard
         </h1>
-        <p className="text-center text-sm text-[#64748b] mb-6">
+        <p className="text-center text-sm text-white/60 mb-6">
           Sign in to continue
         </p>
         <form onSubmit={handleSubmit} className="space-y-4">
           <input
             type="text"
-            placeholder="Username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
             required
             autoComplete="username"
-            className="w-full px-4 py-2.5 rounded-lg border border-[#e2e8f0] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand)] focus:border-transparent"
+            className="w-full px-4 py-2.5 rounded-lg border border-white/15 bg-white/5 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-[var(--brand-light)] focus:border-transparent"
           />
           <input
             type="password"
@@ -66,13 +64,13 @@ export default function LoginPage() {
             onChange={(e) => setPassword(e.target.value)}
             required
             autoComplete="current-password"
-            className="w-full px-4 py-2.5 rounded-lg border border-[#e2e8f0] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand)] focus:border-transparent"
+            className="w-full px-4 py-2.5 rounded-lg border border-white/15 bg-white/5 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-[var(--brand-light)] focus:border-transparent"
           />
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-red-400">{error}</p>}
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-[var(--brand)] hover:bg-[var(--brand-light)] text-white text-sm font-medium py-2.5 rounded-lg transition-colors disabled:opacity-60"
+            className="w-full bg-[var(--brand-light)] hover:brightness-110 text-[var(--brand)] text-sm font-semibold py-2.5 rounded-lg transition disabled:opacity-60"
           >
             {loading ? "Signing in…" : "Sign in"}
           </button>

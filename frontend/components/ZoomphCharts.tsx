@@ -1,5 +1,5 @@
 "use client";
-import { useBrand } from "@/components/BrandProvider";
+import { COLORS } from "@/lib/theme";
 
 import { useState } from "react";
 import {
@@ -21,7 +21,6 @@ interface SummaryProps {
 }
 
 export function PlatformBreakdown({ summary }: SummaryProps) {
-  const { brand: uiBrand } = useBrand();
   const data = [...summary]
     .filter((s) => s.platform)
     .sort((a, b) => b.total_impressions - a.total_impressions);
@@ -48,7 +47,7 @@ export function PlatformBreakdown({ summary }: SummaryProps) {
           formatter={(v: unknown) => [fmt(v as number | undefined), "Impressions"] as [string, string]}
           contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }}
         />
-        <Bar dataKey="total_impressions" fill={uiBrand.colors.brand} radius={[0, 4, 4, 0]} />
+        <Bar dataKey="total_impressions" fill={COLORS.brand} radius={[0, 4, 4, 0]} />
       </BarChart>
     </ResponsiveContainer>
   );
@@ -61,7 +60,6 @@ interface TimeProps {
 type ChartMode = "cumulative" | "daily";
 
 export function ImpressionsTimeSeries({ data: raw }: TimeProps) {
-  const { brand: uiBrand } = useBrand();
   const [mode, setMode] = useState<ChartMode>("cumulative");
   const sorted = [...raw].sort((a, b) => a.date.localeCompare(b.date));
 
@@ -125,7 +123,7 @@ export function ImpressionsTimeSeries({ data: raw }: TimeProps) {
             <Line
               type="monotone"
               dataKey="impressions"
-              stroke={uiBrand.colors.brand}
+              stroke={COLORS.brand}
               strokeWidth={2}
               dot={false}
               activeDot={{ r: 4 }}
@@ -152,7 +150,7 @@ export function ImpressionsTimeSeries({ data: raw }: TimeProps) {
               formatter={(v: unknown) => [fmt(v as number | undefined), "Impressions"] as [string, string]}
               contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }}
             />
-            <Bar dataKey="impressions" fill={uiBrand.colors.brand} radius={[4, 4, 0, 0]} />
+            <Bar dataKey="impressions" fill={COLORS.brand} radius={[4, 4, 0, 0]} />
           </BarChart>
         )}
       </ResponsiveContainer>
