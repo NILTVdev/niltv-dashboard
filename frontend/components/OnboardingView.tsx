@@ -690,7 +690,7 @@ function Progress({ steps }: { steps: ApplicationStep[] }) {
 }
 
 function Btn({ children, onClick, disabled, tone = "default", title }: {
-  children: React.ReactNode; onClick: () => void; disabled?: boolean; tone?: "default" | "primary" | "danger"; title?: string;
+  children: React.ReactNode; onClick: () => void; disabled?: boolean; tone?: "default" | "primary" | "quiet"; title?: string;
 }) {
   return (
     <button
@@ -700,7 +700,7 @@ function Btn({ children, onClick, disabled, tone = "default", title }: {
       className={cn(
         "inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors disabled:opacity-50",
         tone === "primary" && "bg-[var(--brand)] text-white hover:opacity-90",
-        tone === "danger" && "border border-red-200 text-red-700 hover:bg-red-50",
+        tone === "quiet" && "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
         tone === "default" && "border text-gray-700 hover:bg-gray-50",
       )}
     >
@@ -709,8 +709,15 @@ function Btn({ children, onClick, disabled, tone = "default", title }: {
   );
 }
 
-function Actions({ row, busy, onRun }: { row: Application; busy: boolean; onRun: (a: string, b?: unknown) => void }) {
+// Decline first, then the next step on the right: filled when the move is
+// staff's (the amber pills), outlined when it only nudges the athlete.
+// Refresh shows in the opened row only; the tab row's Refresh buttons cover
+// the list.
+function Actions({ row, busy, onRun, withRefresh = false }: {
+  row: Application; busy: boolean; onRun: (a: string, b?: unknown) => void; withRefresh?: boolean;
+}) {
   const s = row.status;
+  const next = s === "applicant" || s === "approved" || s === "signed" ? "primary" : "default";
   const decline = () => {
     const reason = window.prompt("Decline reason (kept on the record; optional):", row.decline_reason ?? "");
     if (reason === null) return;
@@ -718,28 +725,28 @@ function Actions({ row, busy, onRun }: { row: Application; busy: boolean; onRun:
     onRun("decline", { reason, notify });
   };
   return (
-    <div className="flex flex-wrap justify-end gap-1">
+    <div className="flex flex-wrap items-center justify-end gap-1">
+      {(s === "applicant" || s === "approved" || s === "agreement_sent") && (
+        <Btn tone="quiet" disabled={busy} onClick={decline}>Decline</Btn>
+      )}
       {(s === "applicant" || s === "declined") && (
-        <Btn tone="primary" disabled={busy || row.missing_for_approval.length > 0}
+        <Btn tone={next} disabled={busy || row.missing_for_approval.length > 0}
              title={row.missing_for_approval.length ? `Missing: ${row.missing_for_approval.join(", ")}` : "Approve and send the agreement"}
              onClick={() => onRun("approve", { by: "staff" })}>
           <Check className="h-3.5 w-3.5" /> Approve
         </Btn>
       )}
-      {(s === "applicant" || s === "approved" || s === "agreement_sent") && (
-        <Btn tone="danger" disabled={busy} onClick={decline}><Ban className="h-3.5 w-3.5" /> Decline</Btn>
-      )}
       {(s === "approved" || s === "agreement_sent") && (
-        <Btn disabled={busy} onClick={() => onRun("resend-agreement")} title="Create or re-send the DocuSign envelope">
+        <Btn tone={next} disabled={busy} onClick={() => onRun("resend-agreement")} title="Create or re-send the DocuSign envelope">
           <Send className="h-3.5 w-3.5" /> {s === "approved" ? "Send agreement" : "Resend"}
         </Btn>
       )}
       {(s === "signed" || s === "stripe_pending") && (
-        <Btn disabled={busy} onClick={() => onRun("resend-stripe-link")} title="Create the Stripe account if missing and re-email the payout link">
+        <Btn tone={next} disabled={busy} onClick={() => onRun("resend-stripe-link")} title="Create the Stripe account if missing and re-email the payout link">
           <Send className="h-3.5 w-3.5" /> {row.stripe_account_id ? "Resend link" : "Start Stripe"}
         </Btn>
       )}
-      {(row.docusign_envelope_id || row.stripe_account_id) && s !== "declined" && (
+      {withRefresh && (row.docusign_envelope_id || row.stripe_account_id) && s !== "declined" && (
         <Btn disabled={busy} onClick={() => onRun("refresh")} title="Pull live DocuSign + Stripe status">
           <RefreshCw className={cn("h-3.5 w-3.5", busy && "animate-spin")} />
         </Btn>
@@ -809,7 +816,7 @@ function Detail({ row, busy, onRun }: { row: Application; busy: boolean; onRun: 
           {row.decline_reason && <div className="text-red-700">Declined: {row.decline_reason}</div>}
         </div>
         <div className="mt-4 flex flex-wrap gap-1">
-          <Actions row={row} busy={busy} onRun={onRun} />
+          <Actions row={row} busy={busy} onRun={onRun} withRefresh />
         </div>
         {row.missing_for_approval.length > 0 && (
           <div className="mt-2 text-xs text-amber-700">Before approval: {row.missing_for_approval.join(", ")}</div>
