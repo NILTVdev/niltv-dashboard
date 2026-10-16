@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Check, Circle, CircleDashed, Ban, MinusCircle, RefreshCw, Send, ChevronDown, ChevronUp,
-  ExternalLink, Search,
+  ExternalLink, Search, TriangleAlert,
 } from "lucide-react";
 import { cn, fmtDate } from "@/lib/utils";
 import type {
@@ -14,13 +14,6 @@ interface Props {
   initial: Application[];
   summary: ApplicationsSummary | null;
 }
-
-// The Needs column names what the row is waiting on, not the step it is on.
-const NEEDS_LABEL: Record<string, string> = {
-  reviewed: "Approval",
-  agreement: "Agreement",
-  stripe: "Stripe payouts",
-};
 
 const STATUS_LABEL: Record<ApplicationStatus, string> = {
   applicant: "Applicant",
@@ -83,6 +76,44 @@ function fmtWhen(iso: string | null | undefined): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+// How long something has been waiting, in whole days.
+function ago(iso: string): string {
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  return `${days} days ago`;
+}
+
+// The line under the status pill: what the row is waiting on, so staff don't
+// have to open it. alert = it stays stuck until staff do something.
+function waitingOn(r: Application): { text: string; alert?: boolean } | null {
+  switch (r.status) {
+    case "applicant":
+      return r.missing_for_approval.length
+        ? { text: `Missing ${r.missing_for_approval.join(", ")}`, alert: true }
+        : { text: "Ready for review" };
+    case "approved":
+      return { text: "Agreement not sent", alert: true };
+    case "agreement_sent":
+      if (!r.agreement_sent_at) return null;
+      return { text: `Sent ${ago(r.agreement_sent_at)}${r.agreement_reminded_at ? `, reminded ${ago(r.agreement_reminded_at)}` : ""}` };
+    case "signed":
+      return { text: "Stripe not started", alert: true };
+    case "stripe_pending": {
+      const sent = r.stripe_link_sent_at ? `link sent ${ago(r.stripe_link_sent_at)}` : null;
+      // The checklist detail already has Stripe's requirement codes in words.
+      const needs = r.stripe_requirements_due?.length ? r.progress.find((s) => s.key === "stripe")?.detail : null;
+      if (needs) return { text: [needs, sent].filter(Boolean).join(" · ") };
+      if (!r.stripe_payouts_enabled && sent) return { text: `Not started, ${sent}` };
+      return null;
+    }
+    case "declined":
+      return r.decline_reason ? { text: r.decline_reason } : null;
+    default:
+      return null;
+  }
 }
 
 // Bulk sends report a provider failure in the body ("error") with a 200, so
@@ -434,7 +465,6 @@ export default function OnboardingView({ initial, summary }: Props) {
               <th className="px-3 py-2">School / Sport</th>
               <th className="px-3 py-2">Status</th>
               <th className="px-3 py-2">Progress</th>
-              <th className="px-3 py-2">Needs</th>
               <th className="px-3 py-2">Applied</th>
               <th className="px-3 py-2 text-right">Actions</th>
             </tr>
@@ -442,14 +472,14 @@ export default function OnboardingView({ initial, summary }: Props) {
           <tbody className="divide-y">
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-3 py-10 text-center text-gray-400">
+                <td colSpan={8} className="px-3 py-10 text-center text-gray-400">
                   {rows.length === 0 ? "No applications yet. The signup form on niltv.com posts here." : "Nothing matches these filters."}
                 </td>
               </tr>
             )}
             {filtered.map((r) => {
               const open = openId === r.id;
-              const need = r.progress.find((s) => s.state === "current" || s.state === "blocked");
+              const wait = waitingOn(r);
               return (
                 <RowGroup key={r.id} open={open}>
                   <tr className={cn("hover:bg-gray-50 cursor-pointer", open && "bg-[var(--brand-pale)]/40")} onClick={() => toggle(r.id)}>
@@ -473,12 +503,15 @@ export default function OnboardingView({ initial, summary }: Props) {
                       <span className={cn("inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ring-1", STATUS_STYLE[r.status])}>
                         {STATUS_LABEL[r.status]}
                       </span>
+                      {wait && (
+                        <div className={cn("mt-1 flex max-w-[18rem] items-start gap-1 text-xs",
+                          wait.alert ? "font-medium text-amber-700" : "text-gray-600")}>
+                          {wait.alert && <TriangleAlert className="mt-0.5 h-3 w-3 shrink-0" />}
+                          {wait.text}
+                        </div>
+                      )}
                     </td>
                     <td className="px-3 py-2"><Progress steps={r.progress} /></td>
-                    <td className="px-3 py-2 text-xs text-gray-600 max-w-[16rem]">
-                      {r.status === "accepted" ? <span className="text-emerald-700">Complete</span>
-                        : need ? <span>{NEEDS_LABEL[need.key] ?? need.label}{need.detail ? `: ${need.detail}` : ""}</span> : null}
-                    </td>
                     <td className="px-3 py-2 text-xs text-gray-500 whitespace-nowrap">{fmtDate(r.created_at)}</td>
                     <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
                       <Actions row={r} busy={busy === r.id} onRun={(a, b) => run(r.id, a, b)} />
@@ -486,7 +519,7 @@ export default function OnboardingView({ initial, summary }: Props) {
                   </tr>
                   {open && (
                     <tr className="bg-[var(--brand-pale)]/30">
-                      <td colSpan={9} className="px-6 py-4">
+                      <td colSpan={8} className="px-6 py-4">
                         <Detail row={r} busy={busy === r.id} onRun={(a, b) => run(r.id, a, b)} />
                       </td>
                     </tr>
