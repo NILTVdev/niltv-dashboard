@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authDisabled } from "@/lib/serverEnv";
 import { canSeePage, HOME } from "@/lib/access";
-import { SESSION_COOKIE, bootstrapOpen, getSession } from "@/lib/session";
+import { SESSION_COOKIE, bootstrapOpen, getSession, refreshSession, sessionCookieOptions } from "@/lib/session";
 
 // Hostnames the dashboard used to be served from, redirected permanently to
 // where it lives now. Remove once the old domain association is deleted.
@@ -40,6 +40,19 @@ export async function middleware(request: NextRequest) {
   let session = await getSession(token);
   // A shared-login session ends as soon as the first admin account exists.
   if (session?.uid === 0 && !(await bootstrapOpen())) session = null;
+  // A personal account is re-read from the backend at most every RECHECK_SECONDS:
+  // a role change updates the cookie, a disabled account is signed out.
+  let renewed: { token: string; maxAge: number } | null = null;
+  if (session && session.uid > 0) {
+    const r = await refreshSession(session);
+    if (r.kind === "ended") session = null;
+    else if (r.kind === "renewed") {
+      session = r.session;
+      renewed = { token: r.token, maxAge: r.maxAge };
+      // This request's page and route handlers read the new cookie too.
+      request.cookies.set(SESSION_COOKIE, r.token);
+    }
+  }
   if (!session) {
     if (pathname.startsWith("/api/")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -52,11 +65,11 @@ export async function middleware(request: NextRequest) {
 
   // Pages the role can't see send it to its home page. API routes check the
   // role themselves (proxy, uploads) and the backend checks every call.
-  if (!pathname.startsWith("/api/") && !canSeePage(session.role, pathname)) {
-    return NextResponse.redirect(new URL(HOME, request.url));
-  }
-
-  return NextResponse.next();
+  const res = !pathname.startsWith("/api/") && !canSeePage(session.role, pathname)
+    ? NextResponse.redirect(new URL(HOME, request.url))
+    : NextResponse.next({ request: { headers: request.headers } });
+  if (renewed) res.cookies.set(SESSION_COOKIE, renewed.token, sessionCookieOptions(renewed.maxAge));
+  return res;
 }
 
 export const config = {

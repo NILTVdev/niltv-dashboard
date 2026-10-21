@@ -1,7 +1,7 @@
 /**
  * Dashboard session token: one per signed-in account.
  *
- *   base64url(JSON {uid, email, name, role, exp}) + "." + hex(HMAC-SHA256)
+ *   base64url(JSON {uid, email, name, role, exp, chk}) + "." + hex(HMAC-SHA256)
  *
  * Signed with DASHBOARD_SESSION_SECRET (falls back to a value derived from
  * the API key, so no new setting is required). Implemented with Web Crypto
@@ -12,23 +12,31 @@
  * X-Dashboard-User, so disabling someone takes effect on their next request
  * even while their cookie is still valid.
  *
+ * The role in the token decides which pages and links the browser is shown,
+ * so it must not go stale either: refreshSession() re-reads the account from
+ * the backend when the last check (chk) is older than RECHECK_SECONDS, and the
+ * middleware swaps in a re-signed cookie (same expiry) or ends the session.
+ *
  * uid 0 is the shared env login (DASHBOARD_USERNAME / DASHBOARD_PASSWORD),
  * accepted only until the first admin account exists (bootstrap). It sends
  * no X-Dashboard-User, i.e. acts as a service caller, and stops working on
  * both sides (middleware and backend) as soon as an admin exists.
  */
-import type { Role, SessionUser } from "@/lib/access";
-import { API_KEY, authDisabled, BACKEND_URL } from "@/lib/serverEnv";
+import type { Role, SessionUser } from "./access";
+import { API_KEY, authDisabled, BACKEND_URL } from "./serverEnv";
 
 export const SESSION_COOKIE = "auth_token";
 export const SESSION_DAYS = 7;
 const BOOTSTRAP_HOURS = 1;
+/** How old the last account check may be before a request re-reads the account. */
+export const RECHECK_SECONDS = 30;
 
 const enc = new TextEncoder();
 const ROLES: Role[] = ["admin", "general", "demo"];
 
 export interface Session extends SessionUser {
   exp: number; // unix seconds
+  chk?: number; // unix seconds of the last account check (absent on older cookies)
 }
 
 function secret(): string {
@@ -68,11 +76,56 @@ function equalHex(a: string, b: string): boolean {
   return diff === 0;
 }
 
-export async function makeSessionToken(user: SessionUser): Promise<{ token: string; maxAge: number }> {
-  const maxAge = user.uid === 0 ? BOOTSTRAP_HOURS * 3600 : SESSION_DAYS * 86400;
-  const session: Session = { ...user, exp: Math.floor(Date.now() / 1000) + maxAge };
+const nowSeconds = () => Math.floor(Date.now() / 1000);
+
+/** A signed token for this account. ``exp`` keeps an existing session's expiry when re-signing. */
+export async function makeSessionToken(user: SessionUser, exp?: number): Promise<{ token: string; maxAge: number }> {
+  const now = nowSeconds();
+  const expires = exp ?? now + (user.uid === 0 ? BOOTSTRAP_HOURS * 3600 : SESSION_DAYS * 86400);
+  const session: Session = { uid: user.uid, email: user.email, name: user.name, role: user.role, exp: expires, chk: now };
   const body = b64urlEncode(JSON.stringify(session));
-  return { token: `${body}.${await hmacHex(secret(), body)}`, maxAge };
+  return { token: `${body}.${await hmacHex(secret(), body)}`, maxAge: Math.max(expires - now, 0) };
+}
+
+/** Cookie settings for the session token (sign-in and every re-sign). */
+export function sessionCookieOptions(maxAge: number) {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    maxAge,
+    path: "/",
+    sameSite: "lax" as const,
+  };
+}
+
+export type Refresh =
+  | { kind: "current" } // checked recently, or the check could not run: keep the cookie
+  | { kind: "ended" } // the account is gone or disabled
+  | { kind: "renewed"; session: Session; token: string; maxAge: number };
+
+/**
+ * Re-read a personal account from the backend when the cookie's last check is
+ * older than RECHECK_SECONDS. A changed role or name comes back as a re-signed
+ * token with the same expiry; a disabled or deleted account ends the session.
+ * If the backend can't be reached the cookie is kept: the backend still checks
+ * the account on every API call, so this only affects which pages show.
+ */
+export async function refreshSession(session: Session): Promise<Refresh> {
+  if (session.uid === 0 || authDisabled()) return { kind: "current" };
+  if (nowSeconds() - (session.chk ?? 0) < RECHECK_SECONDS) return { kind: "current" };
+  let res: Response;
+  try {
+    res = await fetch(`${BACKEND_URL}/api/auth/me`, { headers: backendHeaders(session), cache: "no-store" });
+  } catch {
+    return { kind: "current" };
+  }
+  if (res.status === 401) return { kind: "ended" };
+  if (!res.ok) return { kind: "current" };
+  const u = await res.json().catch(() => null);
+  if (!u || u.id !== session.uid || !ROLES.includes(u.role)) return { kind: "current" };
+  const fresh: SessionUser = { uid: u.id, email: u.email, name: u.name, role: u.role };
+  const { token, maxAge } = await makeSessionToken(fresh, session.exp);
+  return { kind: "renewed", session: { ...fresh, exp: session.exp, chk: nowSeconds() }, token, maxAge };
 }
 
 const LOCAL: Session = { uid: 0, email: "local", name: "Local", role: "admin", exp: Number.MAX_SAFE_INTEGER };
