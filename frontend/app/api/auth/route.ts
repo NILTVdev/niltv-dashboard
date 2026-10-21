@@ -3,7 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { HOME, type Role, type SessionUser } from "@/lib/access";
 import { authDisabled, BACKEND_URL } from "@/lib/serverEnv";
 import { isJson, sameOrigin } from "@/lib/requestGuards";
-import { backendHeaders, bootstrapOpen, getSession, makeSessionToken, SESSION_COOKIE } from "@/lib/session";
+import {
+  backendHeaders, bootstrapOpen, getSession, makeSessionToken, refreshSession, SESSION_COOKIE, sessionCookieOptions,
+} from "@/lib/session";
 
 /**
  * POST   sign in: {email, password} -> session cookie
@@ -49,13 +51,7 @@ export async function POST(request: NextRequest) {
 
   const { token, maxAge } = await makeSessionToken(user);
   const response = NextResponse.json({ ok: true, home: HOME });
-  response.cookies.set(SESSION_COOKIE, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    maxAge,
-    path: "/",
-    sameSite: "lax",
-  });
+  response.cookies.set(SESSION_COOKIE, token, sessionCookieOptions(maxAge));
   return response;
 }
 
@@ -70,7 +66,17 @@ async function sharedLoginAllowed(username: string, password: string): Promise<b
 export async function GET(request: NextRequest) {
   const s = await getSession(request.cookies.get(SESSION_COOKIE)?.value);
   if (!s) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  return NextResponse.json({ uid: s.uid, email: s.email, name: s.name, role: s.role });
+  // /api/auth skips the middleware, so the nav's role badge refreshes here.
+  const r = await refreshSession(s);
+  if (r.kind === "ended") {
+    const res = NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    res.cookies.delete(SESSION_COOKIE);
+    return res;
+  }
+  const cur = r.kind === "renewed" ? r.session : s;
+  const res = NextResponse.json({ uid: cur.uid, email: cur.email, name: cur.name, role: cur.role });
+  if (r.kind === "renewed") res.cookies.set(SESSION_COOKIE, r.token, sessionCookieOptions(r.maxAge));
+  return res;
 }
 
 export async function DELETE(request: NextRequest) {
