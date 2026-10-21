@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -38,6 +38,17 @@ _FAIL_LIMIT = 8
 _FAIL_WINDOW = 15 * 60.0
 _FAIL_KEYS_PRUNE = 1000
 _fails: dict[str, deque] = {}
+
+# Failed sign-ins across all emails. Each attempt costs a scrypt hash (~16 MB,
+# ~50 ms) on a small box that also serves the public signup form and the
+# webhooks, so a burst of failures is cut off before it can starve them.
+_GLOBAL_FAIL_LIMIT = 60
+_GLOBAL_FAIL_WINDOW = 60.0
+_global_fails: deque = deque()
+
+# Field limits: an email can't be longer than 254 characters, and long
+# passwords only cost hashing time.
+_EMAIL_MAX, _NAME_MAX, _PASSWORD_MAX = 254, 200, 1024
 
 # Unknown and disabled emails are checked against this throwaway hash, so a
 # failed login takes the same time whether or not the account exists.
@@ -58,30 +69,31 @@ class UserOut(BaseModel):
     created_at: Optional[datetime] = None
     created_by: Optional[str] = None
     last_login_at: Optional[datetime] = None
+    session_version: int = 1
 
 
 class LoginIn(BaseModel):
-    email: str
-    password: str
+    email: str = Field(max_length=_EMAIL_MAX)
+    password: str = Field(max_length=_PASSWORD_MAX)
 
 
 class PasswordIn(BaseModel):
-    current_password: str
-    new_password: str
+    current_password: str = Field(max_length=_PASSWORD_MAX)
+    new_password: str = Field(max_length=_PASSWORD_MAX)
 
 
 class UserCreate(BaseModel):
-    email: str
-    name: str
+    email: str = Field(max_length=_EMAIL_MAX)
+    name: str = Field(max_length=_NAME_MAX)
     role: str
-    password: str
+    password: str = Field(max_length=_PASSWORD_MAX)
 
 
 class UserUpdate(BaseModel):
-    name: Optional[str] = None
+    name: Optional[str] = Field(None, max_length=_NAME_MAX)
     role: Optional[str] = None
     active: Optional[bool] = None
-    password: Optional[str] = None
+    password: Optional[str] = Field(None, max_length=_PASSWORD_MAX)
 
 
 def _prune_fails(now: float) -> None:
@@ -89,6 +101,19 @@ def _prune_fails(now: float) -> None:
         return
     for email in [e for e, d in _fails.items() if not d or now - d[-1] > _FAIL_WINDOW]:
         del _fails[email]
+
+
+def _recent_fails(key: str, now: float) -> deque:
+    fails = _fails.get(key, deque())
+    while fails and now - fails[0] > _FAIL_WINDOW:
+        fails.popleft()
+    return fails
+
+
+def _record_fail(key: str, fails: deque, now: float) -> None:
+    fails.append(now)
+    _fails[key] = fails
+    _prune_fails(now)
 
 
 def _active_admins(db: Session) -> int:
@@ -115,17 +140,18 @@ def _require_admin(request: Request) -> None:
 def login(payload: LoginIn, db: Session = Depends(get_db)):
     email = accounts.normalize_email(payload.email)
     now = time.monotonic()
-    fails = _fails.get(email, deque())
-    while fails and now - fails[0] > _FAIL_WINDOW:
-        fails.popleft()
+    while _global_fails and now - _global_fails[0] > _GLOBAL_FAIL_WINDOW:
+        _global_fails.popleft()
+    if len(_global_fails) >= _GLOBAL_FAIL_LIMIT:
+        raise HTTPException(status_code=429, detail="Too many sign-in attempts right now. Try again in a minute.")
+    fails = _recent_fails(email, now)
     if len(fails) >= _FAIL_LIMIT:
         raise HTTPException(status_code=429, detail="Too many failed attempts. Try again in 15 minutes.")
     user = db.query(DashboardUser).filter(DashboardUser.email == email).first()
     password_ok = accounts.verify_password(payload.password, user.password_hash if user is not None else _DUMMY_HASH)
     if user is None or not user.active or not password_ok:
-        fails.append(now)
-        _fails[email] = fails
-        _prune_fails(now)
+        _record_fail(email, fails, now)
+        _global_fails.append(now)
         raise HTTPException(status_code=401, detail="Invalid email or password")
     _fails.pop(email, None)
     user.last_login_at = _now()
@@ -145,17 +171,26 @@ def me(request: Request, db: Session = Depends(get_db)):
 
 @auth_router.post("/password")
 def change_password(payload: PasswordIn, request: Request, db: Session = Depends(get_db)):
+    """Change your own password. Ends every session of this account, this one
+    included: the dashboard signs you out and you sign in with the new one."""
     user = _current(request, db)
+    key, now = f"password-change:{user.id}", time.monotonic()
+    fails = _recent_fails(key, now)
+    if len(fails) >= _FAIL_LIMIT:
+        raise HTTPException(status_code=429, detail="Too many wrong passwords. Try again in 15 minutes.")
     if not accounts.verify_password(payload.current_password, user.password_hash):
+        _record_fail(key, fails, now)
         raise HTTPException(status_code=400, detail="Current password is wrong")
     try:
         accounts.check_password_rules(payload.new_password)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    _fails.pop(key, None)
     user.password_hash = accounts.hash_password(payload.new_password)
+    user.session_version += 1
     user.updated_at = _now()
     db.commit()
-    return {"ok": True}
+    return {"ok": True, "signed_out": True}
 
 
 # -- /api/users (admin) -----------------------------------------------------
@@ -215,7 +250,11 @@ def update_user(user_id: int, payload: UserUpdate, request: Request, db: Session
         user.role = payload.role
     if payload.name is not None and payload.name.strip():
         user.name = payload.name.strip()
+    # A password reset or a disable ends the account's existing sessions, so
+    # re-enabling it later doesn't bring old cookies back.
     if payload.active is not None:
+        if payload.active is False and user.active:
+            user.session_version += 1
         user.active = payload.active
     if payload.password:
         try:
@@ -223,6 +262,7 @@ def update_user(user_id: int, payload: UserUpdate, request: Request, db: Session
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         user.password_hash = accounts.hash_password(payload.password)
+        user.session_version += 1
     user.updated_at = _now()
     db.commit()
     db.refresh(user)

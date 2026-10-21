@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ROLE_LABEL, type SessionUser } from "@/lib/access";
 
 export default function AccountPage() {
@@ -10,6 +11,7 @@ export default function AccountPage() {
   const [repeat, setRepeat] = useState("");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     fetch("/api/auth").then((r) => (r.ok ? r.json() : null)).then(setMe).catch(() => {});
@@ -31,8 +33,11 @@ export default function AccountPage() {
     const data = await res.json().catch(() => ({}));
     setBusy(false);
     if (res.ok) {
+      // The change ends every session of this account, this one included.
       setCurrent(""); setNext(""); setRepeat("");
-      setMsg({ ok: true, text: "Password changed." });
+      setMsg({ ok: true, text: "Password changed. Sign in again with your new password." });
+      await fetch("/api/auth", { method: "DELETE" }).catch(() => {});
+      setTimeout(() => router.push("/login"), 1500);
     } else {
       setMsg({ ok: false, text: data?.detail ?? data?.error ?? "Could not change the password." });
     }

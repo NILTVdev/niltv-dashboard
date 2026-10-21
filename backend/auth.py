@@ -16,14 +16,17 @@ async def require_api_key(
     x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
     x_dashboard_user: Optional[str] = Header(None, alias="X-Dashboard-User"),
     x_dashboard_bootstrap: Optional[str] = Header(None, alias="X-Dashboard-Bootstrap"),
+    x_dashboard_session_version: Optional[str] = Header(None, alias="X-Dashboard-Session-Version"),
 ) -> str:
     """Validate the X-API-Key header against the configured API key
     (DASHBOARD_API_KEY, falling back to DASHBOARD_PASSWORD), then apply the
     caller's account role.
 
-    The dashboard forwards the signed-in account's id as X-Dashboard-User. That
-    account must exist and be active, and its role must allow the call
-    (backend.accounts.allowed). No header = a service caller (deploy probe,
+    The dashboard forwards the signed-in account's id as X-Dashboard-User and
+    the session's version as X-Dashboard-Session-Version. The account must
+    exist, be active and still be on that version (a password change, reset
+    or disable bumps it, ending older sessions), and its role must allow the
+    call (backend.accounts.allowed). No header = a service caller (deploy probe,
     scripts), which keeps full access. The account is left on
     ``request.state.dashboard_user`` (None for service callers).
 
@@ -49,6 +52,8 @@ async def require_api_key(
         user = _load_user(x_dashboard_user)
         if user is None:
             raise HTTPException(status_code=401, detail="Account not found or disabled")
+        if x_dashboard_session_version != str(user.session_version):
+            raise HTTPException(status_code=401, detail="This session has ended. Sign in again.")
         if not accounts.allowed(user.role, request.method, request.url.path):
             raise HTTPException(status_code=403, detail="Your account does not have access to this")
         request.state.dashboard_user = user

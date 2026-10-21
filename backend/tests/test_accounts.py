@@ -24,6 +24,7 @@ def db():
     session = SessionLocal()
     _clean(session)
     users_router._fails.clear()
+    users_router._global_fails.clear()
     yield session
     _clean(session)
     session.close()
@@ -38,7 +39,7 @@ def _user(db, email, role, active=True):
 
 
 def _as(user):
-    return {**KEY, "X-Dashboard-User": str(user.id)}
+    return {**KEY, "X-Dashboard-User": str(user.id), "X-Dashboard-Session-Version": str(user.session_version or 1)}
 
 
 def test_password_hash_roundtrip():
@@ -154,3 +155,61 @@ def test_change_own_password(db):
     assert ok.status_code == 200
     db.refresh(u)
     assert accounts.verify_password("a much longer one", u.password_hash)
+
+
+# -- Security pass: session version, field limits, failure budgets ----------
+
+def test_password_change_and_reset_end_older_sessions(db):
+    admin = _user(db, "boss@niltv.com", "admin")
+    me = _user(db, "me@niltv.com", "general")
+    old = _as(me)
+    ok = client.post("/api/auth/password", headers=old,
+                     json={"current_password": PW, "new_password": "a much longer one"})
+    assert ok.status_code == 200 and ok.json()["signed_out"] is True
+    assert client.get("/api/auth/me", headers=old).status_code == 401
+    db.refresh(me)
+    fresh = _as(me)
+    assert client.get("/api/auth/me", headers=fresh).status_code == 200
+
+    client.post(f"/api/users/{me.id}/update", headers=_as(admin), json={"password": "reset by an admin 1"})
+    assert client.get("/api/auth/me", headers=fresh).status_code == 401
+
+
+def test_disable_then_enable_does_not_revive_old_sessions(db):
+    admin = _user(db, "boss@niltv.com", "admin")
+    me = _user(db, "me@niltv.com", "demo")
+    old = _as(me)
+    client.post(f"/api/users/{me.id}/update", headers=_as(admin), json={"active": False})
+    client.post(f"/api/users/{me.id}/update", headers=_as(admin), json={"active": True})
+    assert client.get("/api/auth/me", headers=old).status_code == 401
+
+
+def test_missing_session_version_is_refused(db):
+    me = _user(db, "me@niltv.com", "admin")
+    assert client.get("/api/auth/me", headers={**KEY, "X-Dashboard-User": str(me.id)}).status_code == 401
+
+
+def test_login_field_lengths_are_capped(db):
+    r = client.post("/api/auth/login", headers=KEY, json={"email": "a" * 300 + "@niltv.com", "password": "x"})
+    assert r.status_code == 422
+    r = client.post("/api/auth/login", headers=KEY, json={"email": "a@niltv.com", "password": "x" * 2000})
+    assert r.status_code == 422
+    assert users_router._fails == {}  # rejected before any hashing or bookkeeping
+
+
+def test_global_failed_login_budget(db, monkeypatch):
+    monkeypatch.setattr(users_router, "_GLOBAL_FAIL_LIMIT", 3)
+    for i in range(3):
+        r = client.post("/api/auth/login", headers=KEY, json={"email": f"x{i}@niltv.com", "password": "nope"})
+        assert r.status_code == 401
+    r = client.post("/api/auth/login", headers=KEY, json={"email": "new@niltv.com", "password": "nope"})
+    assert r.status_code == 429
+
+
+def test_wrong_current_password_attempts_are_limited(db):
+    me = _user(db, "me@niltv.com", "general")
+    for _ in range(users_router._FAIL_LIMIT):
+        r = client.post("/api/auth/password", headers=_as(me), json={"current_password": "nope", "new_password": "whatever long"})
+        assert r.status_code == 400
+    r = client.post("/api/auth/password", headers=_as(me), json={"current_password": PW, "new_password": "whatever long"})
+    assert r.status_code == 429

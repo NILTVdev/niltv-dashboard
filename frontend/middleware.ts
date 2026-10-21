@@ -65,7 +65,15 @@ export async function middleware(request: NextRequest) {
 
   // Pages the role can't see send it to its home page. API routes check the
   // role themselves (proxy, uploads) and the backend checks every call.
-  const res = !pathname.startsWith("/api/") && !canSeePage(session.role, pathname)
+  // The router serves the decoded path (/truebluetv/%72oster is the roster),
+  // so the role check must see it decoded too. Undecodable paths go home.
+  let page: string | null;
+  try {
+    page = decodeURIComponent(pathname);
+  } catch {
+    page = null;
+  }
+  const res = !pathname.startsWith("/api/") && (page === null || !canSeePage(session.role, page))
     ? NextResponse.redirect(new URL(HOME, request.url))
     : NextResponse.next({ request: { headers: request.headers } });
   if (renewed) res.cookies.set(SESSION_COOKIE, renewed.token, sessionCookieOptions(renewed.maxAge));

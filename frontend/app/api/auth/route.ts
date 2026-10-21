@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { HOME, type Role, type SessionUser } from "@/lib/access";
+import { HOME, type Role } from "@/lib/access";
 import { authDisabled, BACKEND_URL } from "@/lib/serverEnv";
 import { isJson, sameOrigin } from "@/lib/requestGuards";
 import {
   backendHeaders, bootstrapOpen, getSession, makeSessionToken, refreshSession, SESSION_COOKIE, sessionCookieOptions,
+  type SessionClaims,
 } from "@/lib/session";
 
 /**
@@ -21,11 +22,18 @@ export async function POST(request: NextRequest) {
   if (!sameOrigin(request.headers.get("origin"), request.headers.get("host")) || !isJson(request.headers.get("content-type"))) {
     return NextResponse.json({ error: "Sign in from the dashboard login page" }, { status: 403 });
   }
+  // A sign-in body is two short fields; anything large is refused before parsing.
+  if (Number(request.headers.get("content-length") ?? 0) > 4096) {
+    return NextResponse.json({ error: "Invalid email or password" }, { status: 400 });
+  }
   const body = await request.json().catch(() => ({}));
   const email = String(body.email ?? body.username ?? "").trim();
   const password = String(body.password ?? "");
+  if (email.length > 254 || password.length > 1024) {
+    return NextResponse.json({ error: "Invalid email or password" }, { status: 400 });
+  }
 
-  let user: SessionUser | null = null;
+  let user: SessionClaims | null = null;
   if (authDisabled()) {
     user = { uid: 0, email: "local", name: "Local", role: "admin" };
   } else {
@@ -37,7 +45,7 @@ export async function POST(request: NextRequest) {
     });
     if (res.ok) {
       const u = await res.json();
-      user = { uid: u.id, email: u.email, name: u.name, role: u.role as Role };
+      user = { uid: u.id, email: u.email, name: u.name, role: u.role as Role, sv: u.session_version };
     } else if (res.status === 429) {
       return NextResponse.json({ error: "Too many failed attempts. Try again in 15 minutes." }, { status: 429 });
     } else if (await sharedLoginAllowed(email, password)) {
