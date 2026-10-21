@@ -12,6 +12,7 @@ keeps /api/users off every non-admin role).
 
 from __future__ import annotations
 
+import secrets
 import time
 from collections import deque
 from datetime import datetime, timezone
@@ -31,9 +32,16 @@ auth_router = APIRouter(dependencies=[Depends(require_api_key)])
 router = APIRouter(dependencies=[Depends(require_api_key)])
 
 # Failed logins per email: N per window. One uvicorn worker, so a dict is enough.
+# Emails whose failures have all aged out are dropped once the dict passes
+# _FAIL_KEYS_PRUNE, so trying many addresses can't grow it without bound.
 _FAIL_LIMIT = 8
 _FAIL_WINDOW = 15 * 60.0
+_FAIL_KEYS_PRUNE = 1000
 _fails: dict[str, deque] = {}
+
+# Unknown and disabled emails are checked against this throwaway hash, so a
+# failed login takes the same time whether or not the account exists.
+_DUMMY_HASH = accounts.hash_password(secrets.token_urlsafe(24))
 
 
 def _now() -> datetime:
@@ -76,10 +84,15 @@ class UserUpdate(BaseModel):
     password: Optional[str] = None
 
 
-def _active_admins(db: Session, excluding: Optional[int] = None) -> int:
+def _prune_fails(now: float) -> None:
+    if len(_fails) <= _FAIL_KEYS_PRUNE:
+        return
+    for email in [e for e, d in _fails.items() if not d or now - d[-1] > _FAIL_WINDOW]:
+        del _fails[email]
+
+
+def _active_admins(db: Session) -> int:
     q = db.query(func.count(DashboardUser.id)).filter(DashboardUser.role == "admin", DashboardUser.active.is_(True))
-    if excluding is not None:
-        q = q.filter(DashboardUser.id != excluding)
     return q.scalar() or 0
 
 
@@ -102,16 +115,19 @@ def _require_admin(request: Request) -> None:
 def login(payload: LoginIn, db: Session = Depends(get_db)):
     email = accounts.normalize_email(payload.email)
     now = time.monotonic()
-    fails = _fails.setdefault(email, deque())
+    fails = _fails.get(email, deque())
     while fails and now - fails[0] > _FAIL_WINDOW:
         fails.popleft()
     if len(fails) >= _FAIL_LIMIT:
         raise HTTPException(status_code=429, detail="Too many failed attempts. Try again in 15 minutes.")
     user = db.query(DashboardUser).filter(DashboardUser.email == email).first()
-    if user is None or not user.active or not accounts.verify_password(payload.password, user.password_hash):
+    password_ok = accounts.verify_password(payload.password, user.password_hash if user is not None else _DUMMY_HASH)
+    if user is None or not user.active or not password_ok:
         fails.append(now)
+        _fails[email] = fails
+        _prune_fails(now)
         raise HTTPException(status_code=401, detail="Invalid email or password")
-    fails.clear()
+    _fails.pop(email, None)
     user.last_login_at = _now()
     db.commit()
     return user
@@ -184,8 +200,13 @@ def update_user(user_id: int, payload: UserUpdate, request: Request, db: Session
     me_id = getattr(getattr(request.state, "dashboard_user", None), "id", None)
     demoting = payload.role is not None and payload.role != "admin" and user.role == "admin"
     disabling = payload.active is False and user.active and user.role == "admin"
-    if (demoting or disabling) and _active_admins(db, excluding=user.id) == 0:
-        raise HTTPException(status_code=409, detail="Keep at least one active admin")
+    if demoting or disabling:
+        # Lock the admin rows first, so two admins demoting or disabling each
+        # other at the same moment can't both pass this check and leave none.
+        admin_ids = db.query(DashboardUser.id).filter(
+            DashboardUser.role == "admin", DashboardUser.active.is_(True)).with_for_update().all()
+        if not [r.id for r in admin_ids if r.id != user.id]:
+            raise HTTPException(status_code=409, detail="Keep at least one active admin")
     if me_id == user.id and (demoting or payload.active is False):
         raise HTTPException(status_code=409, detail="You can't remove your own admin access")
     if payload.role is not None:

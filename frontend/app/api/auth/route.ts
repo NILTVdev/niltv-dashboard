@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { HOME, type Role, type SessionUser } from "@/lib/access";
 import { authDisabled, BACKEND_URL } from "@/lib/serverEnv";
-import { backendHeaders, getSession, makeSessionToken, SESSION_COOKIE } from "@/lib/session";
+import { isJson, sameOrigin } from "@/lib/requestGuards";
+import { backendHeaders, bootstrapOpen, getSession, makeSessionToken, SESSION_COOKIE } from "@/lib/session";
 
 /**
  * POST   sign in: {email, password} -> session cookie
@@ -14,6 +15,10 @@ import { backendHeaders, getSession, makeSessionToken, SESSION_COOKIE } from "@/
  * admin account exists, so the first admin can be created from the Users page.
  */
 export async function POST(request: NextRequest) {
+  // Only the login page signs in, so another site can't sign a browser into an account.
+  if (!sameOrigin(request.headers.get("origin"), request.headers.get("host")) || !isJson(request.headers.get("content-type"))) {
+    return NextResponse.json({ error: "Sign in from the dashboard login page" }, { status: 403 });
+  }
   const body = await request.json().catch(() => ({}));
   const email = String(body.email ?? body.username ?? "").trim();
   const password = String(body.password ?? "");
@@ -59,10 +64,7 @@ async function sharedLoginAllowed(username: string, password: string): Promise<b
   const expectedUser = process.env.DASHBOARD_USERNAME;
   const expectedPass = process.env.DASHBOARD_PASSWORD;
   if (!expectedUser || !expectedPass || username !== expectedUser || password !== expectedPass) return false;
-  const res = await fetch(`${BACKEND_URL}/api/auth/status`, { headers: backendHeaders(null), cache: "no-store" });
-  if (!res.ok) return false;
-  const { active_admins } = await res.json();
-  return active_admins === 0;
+  return bootstrapOpen();
 }
 
 export async function GET(request: NextRequest) {
@@ -71,7 +73,10 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ uid: s.uid, email: s.email, name: s.name, role: s.role });
 }
 
-export async function DELETE() {
+export async function DELETE(request: NextRequest) {
+  if (!sameOrigin(request.headers.get("origin"), request.headers.get("host"))) {
+    return NextResponse.json({ error: "Cross-site request refused" }, { status: 403 });
+  }
   const response = NextResponse.json({ ok: true });
   response.cookies.delete(SESSION_COOKIE);
   return response;

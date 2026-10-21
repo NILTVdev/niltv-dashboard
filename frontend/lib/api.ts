@@ -27,7 +27,8 @@ async function viewerHeaders(): Promise<Record<string, string>> {
 async function apiFetch<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     headers: await viewerHeaders(),
-    next: { revalidate: 300 },
+    // Never cached: a disabled or demoted account must see the change on its next page load.
+    cache: "no-store",
   });
   if (!res.ok) throw new Error(`API ${path} → ${res.status}`);
   return res.json() as Promise<T>;

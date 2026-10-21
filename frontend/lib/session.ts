@@ -14,10 +14,11 @@
  *
  * uid 0 is the shared env login (DASHBOARD_USERNAME / DASHBOARD_PASSWORD),
  * accepted only until the first admin account exists (bootstrap). It sends
- * no X-Dashboard-User, i.e. acts as a service caller.
+ * no X-Dashboard-User, i.e. acts as a service caller, and stops working on
+ * both sides (middleware and backend) as soon as an admin exists.
  */
 import type { Role, SessionUser } from "@/lib/access";
-import { API_KEY, authDisabled } from "@/lib/serverEnv";
+import { API_KEY, authDisabled, BACKEND_URL } from "@/lib/serverEnv";
 
 export const SESSION_COOKIE = "auth_token";
 export const SESSION_DAYS = 7;
@@ -93,9 +94,22 @@ export async function getSession(token: string | undefined | null): Promise<Sess
   }
 }
 
-/** Headers for a backend call made on behalf of this session. */
+/**
+ * Headers for a backend call made on behalf of this session. A shared-login
+ * session also says so (X-Dashboard-Bootstrap), and the backend refuses it
+ * once an admin account exists, even though its cookie is still unexpired.
+ */
 export function backendHeaders(session: Session | null): Record<string, string> {
   const h: Record<string, string> = { "X-API-Key": API_KEY };
   if (session && session.uid > 0) h["X-Dashboard-User"] = String(session.uid);
+  else if (session && session.uid === 0 && !authDisabled()) h["X-Dashboard-Bootstrap"] = "1";
   return h;
+}
+
+/** True while no active admin account exists, i.e. the shared env login may still be used. */
+export async function bootstrapOpen(): Promise<boolean> {
+  const res = await fetch(`${BACKEND_URL}/api/auth/status`, { headers: backendHeaders(null), cache: "no-store" });
+  if (!res.ok) return false;
+  const { active_admins } = await res.json();
+  return active_admins === 0;
 }

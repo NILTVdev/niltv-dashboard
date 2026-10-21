@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authDisabled } from "@/lib/serverEnv";
 import { canSeePage, HOME } from "@/lib/access";
-import { SESSION_COOKIE, getSession } from "@/lib/session";
+import { SESSION_COOKIE, bootstrapOpen, getSession } from "@/lib/session";
 
 // Hostnames the dashboard used to be served from, redirected permanently to
 // where it lives now. Remove once the old domain association is deleted.
@@ -37,7 +37,9 @@ export async function middleware(request: NextRequest) {
 
   // The cookie must carry a signed, unexpired session, not merely exist.
   const token = request.cookies.get(SESSION_COOKIE)?.value;
-  const session = await getSession(token);
+  let session = await getSession(token);
+  // A shared-login session ends as soon as the first admin account exists.
+  if (session?.uid === 0 && !(await bootstrapOpen())) session = null;
   if (!session) {
     if (pathname.startsWith("/api/")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

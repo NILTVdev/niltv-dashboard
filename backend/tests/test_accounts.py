@@ -92,6 +92,33 @@ def test_login_me_and_lockout(db):
     assert client.post("/api/auth/login", headers=KEY, json={"email": u.email, "password": PW}).status_code == 429
 
 
+def test_login_unknown_or_disabled_email_fails_the_same_way(db):
+    _user(db, "gone@niltv.com", "general", active=False)
+    for email in ("nobody@niltv.com", "gone@niltv.com"):
+        r = client.post("/api/auth/login", headers=KEY, json={"email": email, "password": PW})
+        assert r.status_code == 401 and r.json()["detail"] == "Invalid email or password"
+
+
+def test_failed_login_list_drops_aged_out_emails(db, monkeypatch):
+    monkeypatch.setattr(users_router, "_FAIL_KEYS_PRUNE", 2)
+    for i in range(3):
+        client.post("/api/auth/login", headers=KEY, json={"email": f"x{i}@niltv.com", "password": "nope"})
+    assert len(users_router._fails) == 3  # all still inside the window
+    for d in users_router._fails.values():
+        d[-1] -= users_router._FAIL_WINDOW + 1  # age every failure out
+    client.post("/api/auth/login", headers=KEY, json={"email": "y@niltv.com", "password": "nope"})
+    assert list(users_router._fails) == ["y@niltv.com"]
+
+
+def test_shared_login_calls_stop_once_an_admin_exists(db):
+    boot = {**KEY, "X-Dashboard-Bootstrap": "1"}
+    assert client.get("/api/users/", headers=boot).status_code == 200
+    _user(db, "first@niltv.com", "admin")
+    assert client.get("/api/users/", headers=boot).status_code == 401
+    # Plain service callers (scripts, the deploy probe) are unaffected.
+    assert client.get("/api/users/", headers=KEY).status_code == 200
+
+
 def test_status_counts_active_admins(db):
     assert client.get("/api/auth/status", headers=KEY).json() == {"active_admins": 0}
     _user(db, "a@niltv.com", "admin")
