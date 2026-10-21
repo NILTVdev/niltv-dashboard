@@ -49,6 +49,10 @@ def required() -> bool:
 
 _jwks_clients: dict[str, object] = {}
 
+# Cognito signs ID tokens with RS256 only. The algorithm is fixed here, never
+# taken from the token header, so a token can't pick a weaker one.
+ALGORITHM = "RS256"
+
 
 def _jwks(pool_id: str):
     import jwt  # PyJWT
@@ -71,6 +75,8 @@ def verify(token: Optional[str]) -> Account:
         unverified = jwt.decode(token, options={"verify_signature": False})
     except jwt.PyJWTError as e:
         raise TokenError(f"malformed token: {e}") from e
+    if header.get("alg") != ALGORITHM:
+        raise TokenError("unexpected token algorithm")
     iss = unverified.get("iss", "")
     match = next(((p, c) for p, c in pools() if iss.endswith("/" + p)), None)
     if match is None:
@@ -79,7 +85,7 @@ def verify(token: Optional[str]) -> Account:
     try:
         key = _jwks(pool_id).get_signing_key_from_jwt(token)
         claims = jwt.decode(
-            token, key.key, algorithms=[header.get("alg", "RS256")], audience=client_id,
+            token, key.key, algorithms=[ALGORITHM], audience=client_id,
             issuer=f"https://cognito-idp.{pool_id.split('_')[0]}.amazonaws.com/{pool_id}",
         )
     except jwt.PyJWTError as e:
