@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getSession, makeSessionToken, RECHECK_SECONDS, refreshSession, type Session } from "./session";
 
-const ADMIN = { uid: 7, email: "staff@niltv.com", name: "Staff", role: "admin" as const };
+const ADMIN = { uid: 7, email: "staff@niltv.com", name: "Staff", role: "admin" as const, sv: 1 };
 
 function me(body: unknown, status = 200) {
   return vi.fn(async () => new Response(JSON.stringify(body), { status }));
@@ -30,7 +30,7 @@ describe("refreshSession", () => {
   });
 
   it("picks up a role change and keeps the original expiry", async () => {
-    vi.stubGlobal("fetch", me({ id: 7, email: "staff@niltv.com", name: "Staff", role: "general" }));
+    vi.stubGlobal("fetch", me({ id: 7, email: "staff@niltv.com", name: "Staff", role: "general", session_version: 1 }));
     const old = await sessionCheckedSecondsAgo(RECHECK_SECONDS + 5);
     const r = await refreshSession(old);
     expect(r.kind).toBe("renewed");
@@ -39,6 +39,21 @@ describe("refreshSession", () => {
     const reread = await getSession(r.token);
     expect(reread?.role).toBe("general");
     expect(reread?.exp).toBe(old.exp);
+  });
+
+  it("ends the session when the account's session version moved on", async () => {
+    vi.stubGlobal("fetch", me({ id: 7, email: "staff@niltv.com", name: "Staff", role: "admin", session_version: 2 }));
+    const r = await refreshSession(await sessionCheckedSecondsAgo(RECHECK_SECONDS + 5));
+    expect(r.kind).toBe("ended");
+  });
+
+  it("sends the session version with every backend call", async () => {
+    const fetchMock = me({ id: 7, email: "staff@niltv.com", name: "Staff", role: "admin", session_version: 1 });
+    vi.stubGlobal("fetch", fetchMock);
+    await refreshSession(await sessionCheckedSecondsAgo(RECHECK_SECONDS + 5));
+    const headers = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].headers as Record<string, string>;
+    expect(headers["X-Dashboard-User"]).toBe("7");
+    expect(headers["X-Dashboard-Session-Version"]).toBe("1");
   });
 
   it("ends the session when the account is disabled or gone", async () => {
@@ -55,7 +70,7 @@ describe("refreshSession", () => {
   });
 
   it("re-checks cookies issued before the check time existed", async () => {
-    const fetchMock = me({ id: 7, email: "staff@niltv.com", name: "Staff", role: "admin" });
+    const fetchMock = me({ id: 7, email: "staff@niltv.com", name: "Staff", role: "admin", session_version: 1 });
     vi.stubGlobal("fetch", fetchMock);
     const { chk: _drop, ...legacy } = await sessionCheckedSecondsAgo(0);
     void _drop;

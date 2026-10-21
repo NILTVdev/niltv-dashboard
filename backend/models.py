@@ -642,6 +642,7 @@ class DashboardUser(Base):
     role = Column(Text, nullable=False)
     password_hash = Column(Text, nullable=False)
     active = Column(Boolean, nullable=False, server_default="true")
+    session_version = Column(Integer, nullable=False, server_default="1")  # migration 031
     created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
     created_by = Column(Text)
     updated_at = Column(TIMESTAMP(timezone=True))
