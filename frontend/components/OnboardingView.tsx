@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Check, Circle, CircleDashed, Ban, MinusCircle, RefreshCw, Send, ChevronDown, ChevronUp,
-  ExternalLink, Search,
+  ExternalLink, Search, TriangleAlert,
 } from "lucide-react";
 import { cn, fmtDate } from "@/lib/utils";
 import type {
@@ -15,31 +15,30 @@ interface Props {
   summary: ApplicationsSummary | null;
 }
 
-// The Needs column names what the row is waiting on, not the step it is on.
-const NEEDS_LABEL: Record<string, string> = {
-  reviewed: "Approval",
-  agreement: "Agreement",
-  stripe: "Stripe payouts",
-};
-
 const STATUS_LABEL: Record<ApplicationStatus, string> = {
   applicant: "Applicant",
   approved: "Approved",
   declined: "Declined",
-  agreement_sent: "Agreement sent",
+  agreement_sent: "Awaiting signature",
   signed: "Signed",
   stripe_pending: "Stripe pending",
   accepted: "Accepted",
 };
 
+// Three tones, by whose move it is: amber = staff, gray = waiting on the
+// athlete (or closed), green = done.
+const OURS = "bg-amber-50 text-amber-800 ring-amber-200";
+const WAITING = "bg-gray-100 text-gray-600 ring-gray-200";
+const DONE = "bg-emerald-50 text-emerald-800 ring-emerald-200";
+
 const STATUS_STYLE: Record<ApplicationStatus, string> = {
-  applicant: "bg-amber-50 text-amber-800 ring-amber-200",
-  approved: "bg-sky-50 text-sky-800 ring-sky-200",
-  declined: "bg-gray-100 text-gray-600 ring-gray-200",
-  agreement_sent: "bg-sky-50 text-sky-800 ring-sky-200",
-  signed: "bg-indigo-50 text-indigo-800 ring-indigo-200",
-  stripe_pending: "bg-violet-50 text-violet-800 ring-violet-200",
-  accepted: "bg-emerald-50 text-emerald-800 ring-emerald-200",
+  applicant: OURS,
+  approved: OURS, // approved, but the agreement has not gone out
+  declined: WAITING,
+  agreement_sent: WAITING,
+  signed: OURS, // signed, but Stripe has not been started
+  stripe_pending: WAITING,
+  accepted: DONE,
 };
 
 type BulkAction = "agreement" | "stripe";
@@ -77,6 +76,44 @@ function fmtWhen(iso: string | null | undefined): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+// How long something has been waiting, in whole days.
+function ago(iso: string): string {
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  return `${days} days ago`;
+}
+
+// The line under the status pill: what the row is waiting on, so staff don't
+// have to open it. alert = it stays stuck until staff do something.
+function waitingOn(r: Application): { text: string; alert?: boolean } | null {
+  switch (r.status) {
+    case "applicant":
+      return r.missing_for_approval.length
+        ? { text: `Missing ${r.missing_for_approval.join(", ")}`, alert: true }
+        : { text: "Ready for review" };
+    case "approved":
+      return { text: "Agreement not sent", alert: true };
+    case "agreement_sent":
+      if (!r.agreement_sent_at) return null;
+      return { text: `Sent ${ago(r.agreement_sent_at)}${r.agreement_reminded_at ? `, reminded ${ago(r.agreement_reminded_at)}` : ""}` };
+    case "signed":
+      return { text: "Stripe not started", alert: true };
+    case "stripe_pending": {
+      const sent = r.stripe_link_sent_at ? `link sent ${ago(r.stripe_link_sent_at)}` : null;
+      // The checklist detail already has Stripe's requirement codes in words.
+      const needs = r.stripe_requirements_due?.length ? r.progress.find((s) => s.key === "stripe")?.detail : null;
+      if (needs) return { text: [needs, sent].filter(Boolean).join(" · ") };
+      if (!r.stripe_payouts_enabled && sent) return { text: `Not started, ${sent}` };
+      return null;
+    }
+    case "declined":
+      return r.decline_reason ? { text: r.decline_reason } : null;
+    default:
+      return null;
+  }
 }
 
 // Bulk sends report a provider failure in the body ("error") with a 200, so
@@ -316,7 +353,7 @@ export default function OnboardingView({ initial, summary }: Props) {
         </div>
         {integ && (
           <div className="flex flex-wrap gap-2 text-xs">
-            <Integration ok={integ.docusign || integ.docusign_powerform} label={integ.docusign ? "DocuSign API" : "DocuSign PowerForm"} />
+            <Integration ok={integ.docusign || integ.docusign_powerform} label="DocuSign" />
             <Integration ok={integ.stripe} label="Stripe" />
             <Integration ok={integ.payout_links} label="Payout links" />
             <Integration ok={integ.email} label="Email" />
@@ -324,34 +361,18 @@ export default function OnboardingView({ initial, summary }: Props) {
         )}
       </div>
 
-      {/* Pipeline counts */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-5">
-        {(["applicant", "agreement_sent", "signed", "stripe_pending", "accepted", "declined"] as ApplicationStatus[]).map((s) => (
-          <button
-            key={s}
-            onClick={() => setFilter(s === "signed" ? "all" : s)}
-            className={cn(
-              "rounded-xl border bg-white p-3 text-left shadow-sm hover:border-[var(--brand-light)] transition-colors",
-              filter === s && "ring-2 ring-[var(--brand-light)]",
-            )}
-          >
-            <div className="text-2xl font-bold text-[var(--brand)]">{counts[s] ?? 0}</div>
-            <div className="text-xs text-gray-500">{STATUS_LABEL[s]}</div>
-          </button>
-        ))}
-      </div>
-
       {/* Filters: status tabs on their own row; school/sport + search on the
           next. One wrapping row used to strand the search box on a second
           line, right-aligned by ml-auto, at tablet widths. */}
       <div className="mb-2 flex flex-wrap items-center gap-2">
-      <div className="flex flex-wrap gap-1 rounded-lg bg-gray-100 p-1 w-fit max-w-full">
+      {/* On a phone the tabs stay on one line and swipe sideways. */}
+      <div className="flex flex-wrap gap-1 rounded-lg bg-gray-100 p-1 w-fit max-w-full max-sm:flex-nowrap max-sm:overflow-x-auto max-sm:[scrollbar-width:none] max-sm:[&::-webkit-scrollbar]:hidden">
         {FILTERS.map((f) => (
           <button
             key={f.key}
             onClick={() => setFilter(f.key)}
             className={cn(
-              "h-7 px-3 rounded-md text-xs font-semibold transition-colors",
+              "h-7 shrink-0 whitespace-nowrap px-3 rounded-md text-xs font-semibold transition-colors",
               filter === f.key ? "bg-white text-[var(--brand)] shadow-sm" : "text-gray-600 hover:text-gray-900",
             )}
           >
@@ -387,18 +408,18 @@ export default function OnboardingView({ initial, summary }: Props) {
       )}
       {showRuns && runs.length > 0 && <RunLog runs={runs} />}
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <select value={school} onChange={(e) => setSchool(e.target.value)} className="h-9 rounded-md border px-2 text-sm bg-white">
+        <select value={school} onChange={(e) => setSchool(e.target.value)} className="h-9 rounded-md border px-2 text-sm bg-white max-sm:min-w-0 max-sm:flex-1">
           <option value="all">Schools ({schools.length})</option>
           {schools.map(([s, n]) => <option key={s} value={s}>{s} ({n})</option>)}
         </select>
-        <select value={sport} onChange={(e) => setSport(e.target.value)} className="h-9 rounded-md border px-2 text-sm bg-white">
+        <select value={sport} onChange={(e) => setSport(e.target.value)} className="h-9 rounded-md border px-2 text-sm bg-white max-sm:min-w-0 max-sm:flex-1">
           <option value="all">Sports ({sports.length})</option>
           {sports.map(([s, n]) => <option key={s} value={s}>{s} ({n})</option>)}
         </select>
         {/* Grows into whatever is left of the row (capped), instead of a fixed
             box that either fits or wraps; on a narrow screen it takes the
             full width of its own row. */}
-        <label className="relative flex-1 min-w-[12rem] sm:max-w-xs sm:ml-auto">
+        <label className="relative flex-1 min-w-[12rem] sm:max-w-xs sm:ml-auto max-sm:basis-full">
           <Search className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
           <input
             value={search}
@@ -432,72 +453,83 @@ export default function OnboardingView({ initial, summary }: Props) {
         />
       )}
 
+      {/* On a phone (below sm) the table turns into stacked rows: the header
+          keeps only Select all, and each row is a small grid with the
+          checkbox and chevron beside name, school, status and actions. */}
       <div className="overflow-x-auto rounded-xl border bg-white shadow-sm">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
-            <tr>
-              <th className="pl-3 py-2 w-6">
-                <input type="checkbox" aria-label="Select all shown" checked={allVisibleSelected}
-                       onChange={toggleAllVisible} disabled={filtered.length === 0 || bulkRunning} />
+        <table className="w-full text-sm max-sm:block">
+          <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500 max-sm:block">
+            <tr className="max-sm:flex max-sm:items-center">
+              <th className="pl-3 py-2 w-6 max-sm:w-auto">
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" aria-label="Select all shown" checked={allVisibleSelected}
+                         onChange={toggleAllVisible} disabled={filtered.length === 0 || bulkRunning} />
+                  <span className="sm:hidden">Select all</span>
+                </label>
               </th>
-              <th className="px-3 py-2 w-8" />
-              <th className="px-3 py-2">Athlete</th>
-              <th className="px-3 py-2">School / Sport</th>
-              <th className="px-3 py-2">Status</th>
-              <th className="px-3 py-2">Progress</th>
-              <th className="px-3 py-2">Needs</th>
-              <th className="px-3 py-2">Applied</th>
-              <th className="px-3 py-2 text-right">Actions</th>
+              <th className="px-3 py-2 w-8 max-sm:hidden" />
+              <th className="px-3 py-2 max-sm:hidden">Athlete</th>
+              <th className="px-3 py-2 max-sm:hidden">School / Sport</th>
+              <th className="px-3 py-2 max-sm:hidden">Status</th>
+              {/* Progress and Applied are the first to go below desktop width;
+                  the status line already says where the row is. */}
+              <th className="hidden px-3 py-2 lg:table-cell">Progress</th>
+              <th className="hidden px-3 py-2 lg:table-cell">Applied</th>
+              <th className="px-3 py-2 text-right max-sm:hidden">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y">
+          <tbody className="divide-y max-sm:block">
             {filtered.length === 0 && (
-              <tr>
-                <td colSpan={9} className="px-3 py-10 text-center text-gray-400">
+              <tr className="max-sm:block">
+                <td colSpan={8} className="px-3 py-10 text-center text-gray-400 max-sm:block">
                   {rows.length === 0 ? "No applications yet. The signup form on niltv.com posts here." : "Nothing matches these filters."}
                 </td>
               </tr>
             )}
             {filtered.map((r) => {
               const open = openId === r.id;
-              const need = r.progress.find((s) => s.state === "current" || s.state === "blocked");
+              const wait = waitingOn(r);
               return (
                 <RowGroup key={r.id} open={open}>
-                  <tr className={cn("hover:bg-gray-50 cursor-pointer", open && "bg-[var(--brand-pale)]/40")} onClick={() => toggle(r.id)}>
-                    <td className="pl-3 py-2" onClick={(e) => e.stopPropagation()}>
+                  <tr className={cn("hover:bg-gray-50 cursor-pointer max-sm:grid max-sm:grid-cols-[auto_minmax(0,1fr)_auto] max-sm:py-1.5",
+                    open && "bg-[var(--brand-pale)]/40")} onClick={() => toggle(r.id)}>
+                    <td className="pl-3 py-2 max-sm:col-start-1 max-sm:row-start-1" onClick={(e) => e.stopPropagation()}>
                       <input type="checkbox" aria-label={`Select ${r.first_name ?? ""} ${r.last_name ?? ""}`}
                              checked={selected.has(r.id)} onChange={() => toggleSelected(r.id)} disabled={bulkRunning} />
                     </td>
-                    <td className="px-3 py-2 text-gray-400">{open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2 text-gray-400 max-sm:col-start-3 max-sm:row-start-1">{open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</td>
+                    <td className="px-3 py-2 max-sm:col-start-2 max-sm:row-start-1 max-sm:pb-0.5">
                       <div className="font-medium">{r.first_name} {r.last_name}</div>
                       <div className="text-xs text-gray-500">
                         {r.instagram ? `@${r.instagram}` : r.email}
                         {r.international && <span className="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-600" title="International student (from the form)">INTL</span>}
                       </div>
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2 max-sm:col-start-2 max-sm:row-start-2 max-sm:py-0.5">
                       <div>{r.university ?? <span className="text-gray-400">?</span>}</div>
                       <div className="text-xs text-gray-500">{[r.sport, r.year].filter(Boolean).join(" · ")}</div>
                     </td>
-                    <td className="px-3 py-2">
-                      <span className={cn("inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ring-1", STATUS_STYLE[r.status])}>
+                    <td className="px-3 py-2 max-sm:col-start-2 max-sm:row-start-3 max-sm:pt-1.5">
+                      <span className={cn("inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ring-1", STATUS_STYLE[r.status])}>
                         {STATUS_LABEL[r.status]}
                       </span>
+                      {wait && (
+                        <div className={cn("mt-1 flex max-w-[18rem] items-start gap-1 text-xs",
+                          wait.alert ? "font-medium text-amber-700" : "text-gray-600")}>
+                          {wait.alert && <TriangleAlert className="mt-0.5 h-3 w-3 shrink-0" />}
+                          {wait.text}
+                        </div>
+                      )}
                     </td>
-                    <td className="px-3 py-2"><Progress steps={r.progress} /></td>
-                    <td className="px-3 py-2 text-xs text-gray-600 max-w-[16rem]">
-                      {r.status === "accepted" ? <span className="text-emerald-700">Complete</span>
-                        : need ? <span>{NEEDS_LABEL[need.key] ?? need.label}{need.detail ? `: ${need.detail}` : ""}</span> : null}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-gray-500 whitespace-nowrap">{fmtDate(r.created_at)}</td>
-                    <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+                    <td className="hidden px-3 py-2 lg:table-cell"><Progress steps={r.progress} /></td>
+                    <td className="hidden px-3 py-2 text-xs text-gray-500 whitespace-nowrap lg:table-cell">{fmtDate(r.created_at)}</td>
+                    <td className="px-3 py-2 text-right max-sm:col-span-2 max-sm:col-start-2 max-sm:row-start-4" onClick={(e) => e.stopPropagation()}>
                       <Actions row={r} busy={busy === r.id} onRun={(a, b) => run(r.id, a, b)} />
                     </td>
                   </tr>
                   {open && (
-                    <tr className="bg-[var(--brand-pale)]/30">
-                      <td colSpan={9} className="px-6 py-4">
+                    <tr className="bg-[var(--brand-pale)]/30 max-sm:block">
+                      <td colSpan={8} className="px-6 py-4 max-sm:block max-sm:px-4">
                         <Detail row={r} busy={busy === r.id} onRun={(a, b) => run(r.id, a, b)} />
                       </td>
                     </tr>
@@ -626,12 +658,13 @@ function RunLog({ runs }: { runs: ReconcileRun[] }) {
   );
 }
 
+// Shown only when something is not set up; a configured integration says nothing.
 function Integration({ ok, label }: { ok: boolean; label: string }) {
+  if (ok) return null;
   return (
-    <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 ring-1",
-      ok ? "bg-emerald-50 text-emerald-800 ring-emerald-200" : "bg-amber-50 text-amber-800 ring-amber-200")}>
-      <span className={cn("h-1.5 w-1.5 rounded-full", ok ? "bg-emerald-500" : "bg-amber-500")} />
-      {label}{ok ? "" : " not configured"}
+    <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 ring-1 bg-amber-50 text-amber-800 ring-amber-200">
+      <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+      {label} not configured
     </span>
   );
 }
@@ -647,21 +680,27 @@ function StepIcon({ state }: { state: ApplicationStep["state"] }) {
   }
 }
 
+// One plain dot per step: filled = done, ring = where the row is now, dash =
+// skipped. The status line says the rest; the tooltip spells out each step.
+const DOT: Record<ApplicationStep["state"], string> = {
+  done: "bg-slate-600",
+  current: "bg-white ring-2 ring-inset ring-slate-600",
+  blocked: "bg-white ring-2 ring-inset ring-gray-300",
+  skipped: "h-0.5 rounded-sm bg-gray-300",
+  todo: "bg-gray-200",
+};
+
 function Progress({ steps }: { steps: ApplicationStep[] }) {
+  const summary = steps.map((s) => `${s.label}: ${s.state}${s.detail ? ` (${s.detail})` : ""}`).join("\n");
   return (
-    <div className="flex items-center gap-1" title={steps.map((s) => `${s.label}: ${s.state}${s.detail ? ` (${s.detail})` : ""}`).join("\n")}>
-      {steps.map((s, i) => (
-        <div key={s.key} className="flex items-center">
-          <StepIcon state={s.state} />
-          {i < steps.length - 1 && <span className={cn("mx-0.5 h-px w-3", s.state === "done" ? "bg-emerald-400" : "bg-gray-200")} />}
-        </div>
-      ))}
+    <div className="flex items-center gap-1.5" title={summary} role="img" aria-label={summary}>
+      {steps.map((s) => <span key={s.key} className={cn("h-2 w-2 rounded-full", DOT[s.state])} />)}
     </div>
   );
 }
 
 function Btn({ children, onClick, disabled, tone = "default", title }: {
-  children: React.ReactNode; onClick: () => void; disabled?: boolean; tone?: "default" | "primary" | "danger"; title?: string;
+  children: React.ReactNode; onClick: () => void; disabled?: boolean; tone?: "default" | "primary" | "quiet"; title?: string;
 }) {
   return (
     <button
@@ -669,9 +708,10 @@ function Btn({ children, onClick, disabled, tone = "default", title }: {
       disabled={disabled}
       title={title}
       className={cn(
-        "inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors disabled:opacity-50",
+        // Bigger tap targets on a phone.
+        "inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors disabled:opacity-50 max-sm:px-3 max-sm:py-2 max-sm:text-sm",
         tone === "primary" && "bg-[var(--brand)] text-white hover:opacity-90",
-        tone === "danger" && "border border-red-200 text-red-700 hover:bg-red-50",
+        tone === "quiet" && "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
         tone === "default" && "border text-gray-700 hover:bg-gray-50",
       )}
     >
@@ -680,8 +720,15 @@ function Btn({ children, onClick, disabled, tone = "default", title }: {
   );
 }
 
-function Actions({ row, busy, onRun }: { row: Application; busy: boolean; onRun: (a: string, b?: unknown) => void }) {
+// Decline first, then the next step on the right: filled when the move is
+// staff's (the amber pills), outlined when it only nudges the athlete.
+// Refresh shows in the opened row only; the tab row's Refresh buttons cover
+// the list.
+function Actions({ row, busy, onRun, withRefresh = false }: {
+  row: Application; busy: boolean; onRun: (a: string, b?: unknown) => void; withRefresh?: boolean;
+}) {
   const s = row.status;
+  const next = s === "applicant" || s === "approved" || s === "signed" ? "primary" : "default";
   const decline = () => {
     const reason = window.prompt("Decline reason (kept on the record; optional):", row.decline_reason ?? "");
     if (reason === null) return;
@@ -689,28 +736,28 @@ function Actions({ row, busy, onRun }: { row: Application; busy: boolean; onRun:
     onRun("decline", { reason, notify });
   };
   return (
-    <div className="flex flex-wrap justify-end gap-1">
+    <div className="flex flex-wrap items-center justify-end gap-1">
+      {(s === "applicant" || s === "approved" || s === "agreement_sent") && (
+        <Btn tone="quiet" disabled={busy} onClick={decline}>Decline</Btn>
+      )}
       {(s === "applicant" || s === "declined") && (
-        <Btn tone="primary" disabled={busy || row.missing_for_approval.length > 0}
+        <Btn tone={next} disabled={busy || row.missing_for_approval.length > 0}
              title={row.missing_for_approval.length ? `Missing: ${row.missing_for_approval.join(", ")}` : "Approve and send the agreement"}
              onClick={() => onRun("approve", { by: "staff" })}>
           <Check className="h-3.5 w-3.5" /> Approve
         </Btn>
       )}
-      {(s === "applicant" || s === "approved" || s === "agreement_sent") && (
-        <Btn tone="danger" disabled={busy} onClick={decline}><Ban className="h-3.5 w-3.5" /> Decline</Btn>
-      )}
       {(s === "approved" || s === "agreement_sent") && (
-        <Btn disabled={busy} onClick={() => onRun("resend-agreement")} title="Create or re-send the DocuSign envelope">
+        <Btn tone={next} disabled={busy} onClick={() => onRun("resend-agreement")} title="Create or re-send the DocuSign envelope">
           <Send className="h-3.5 w-3.5" /> {s === "approved" ? "Send agreement" : "Resend"}
         </Btn>
       )}
       {(s === "signed" || s === "stripe_pending") && (
-        <Btn disabled={busy} onClick={() => onRun("resend-stripe-link")} title="Create the Stripe account if missing and re-email the payout link">
+        <Btn tone={next} disabled={busy} onClick={() => onRun("resend-stripe-link")} title="Create the Stripe account if missing and re-email the payout link">
           <Send className="h-3.5 w-3.5" /> {row.stripe_account_id ? "Resend link" : "Start Stripe"}
         </Btn>
       )}
-      {(row.docusign_envelope_id || row.stripe_account_id) && s !== "declined" && (
+      {withRefresh && (row.docusign_envelope_id || row.stripe_account_id) && s !== "declined" && (
         <Btn disabled={busy} onClick={() => onRun("refresh")} title="Pull live DocuSign + Stripe status">
           <RefreshCw className={cn("h-3.5 w-3.5", busy && "animate-spin")} />
         </Btn>
@@ -780,7 +827,7 @@ function Detail({ row, busy, onRun }: { row: Application; busy: boolean; onRun: 
           {row.decline_reason && <div className="text-red-700">Declined: {row.decline_reason}</div>}
         </div>
         <div className="mt-4 flex flex-wrap gap-1">
-          <Actions row={row} busy={busy} onRun={onRun} />
+          <Actions row={row} busy={busy} onRun={onRun} withRefresh />
         </div>
         {row.missing_for_approval.length > 0 && (
           <div className="mt-2 text-xs text-amber-700">Before approval: {row.missing_for_approval.join(", ")}</div>
@@ -790,7 +837,7 @@ function Detail({ row, busy, onRun }: { row: Application; busy: boolean; onRun: 
       {/* Application: the four things approval needs, then everything else behind View more */}
       <section>
         <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Application</h3>
-        <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1.5 text-sm">
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
           <Dt>Name</Dt><Dd><Need ok={!missing.has("name")}>{[row.first_name, row.last_name].filter(Boolean).join(" ")}</Need></Dd>
           <Dt>Email</Dt><Dd><Need ok={!missing.has("email")}><a className="hover:underline" href={`mailto:${row.email}`}>{row.email}</a></Need></Dd>
           <Dt>Roster</Dt><Dd><Need ok={!missing.has("roster link")}>{row.roster_link && <a className="text-[var(--brand)] hover:underline break-all" href={row.roster_link} target="_blank" rel="noreferrer">{row.roster_link.replace(/^https?:\/\/(www\.)?/, "")}</a>}</Need></Dd>
@@ -807,7 +854,7 @@ function Detail({ row, busy, onRun }: { row: Application; busy: boolean; onRun: 
           {more ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />} {more ? "Less" : "View more"}
         </button>
         {more && (
-          <dl className="mt-2 grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-sm border-t pt-2">
+          <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm border-t pt-2">
             <Dt>Phone</Dt><Dd>{row.phone}</Dd>
             <Dt>College email</Dt><Dd>{row.college_email}</Dd>
             <Dt>International</Dt><Dd>{row.international === true ? "yes" : row.international === false ? "no" : ""}</Dd>
