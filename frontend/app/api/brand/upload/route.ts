@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { sameOrigin } from "@/lib/requestGuards";
 import { backendHeaders, getSession, SESSION_COOKIE } from "@/lib/session";
 
 import { BACKEND_URL as BACKEND } from "@/lib/serverEnv";
@@ -10,6 +11,9 @@ export async function POST(request: NextRequest) {
   }
   if (session.role !== "admin") {
     return NextResponse.json({ error: "Admins only" }, { status: 403 });
+  }
+  if (!sameOrigin(request.headers.get("origin"), request.headers.get("host"))) {
+    return NextResponse.json({ error: "Cross-site request refused" }, { status: 403 });
   }
 
   const formData = await request.formData();

@@ -9,6 +9,7 @@ import type {
 } from "./types";
 
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 
 import { BACKEND_URL as BASE } from "./serverEnv";
 import { backendHeaders, getSession, SESSION_COOKIE } from "./session";
@@ -19,15 +20,24 @@ export async function viewerSession() {
   return getSession(jar.get(SESSION_COOKIE)?.value);
 }
 
-/** Backend headers for the account viewing this page (X-API-Key + X-Dashboard-User). */
+/**
+ * Backend headers for the account viewing this page (X-API-Key + X-Dashboard-User).
+ * No session means no backend call at all: without the account header the
+ * backend would treat the request as a full-access service caller, so the
+ * page goes to the login screen instead (the middleware normally does this
+ * first; this is the second lock).
+ */
 async function viewerHeaders(): Promise<Record<string, string>> {
-  return backendHeaders(await viewerSession());
+  const session = await viewerSession();
+  if (!session) redirect("/login");
+  return backendHeaders(session);
 }
 
 async function apiFetch<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     headers: await viewerHeaders(),
-    next: { revalidate: 300 },
+    // Never cached: a disabled or demoted account must see the change on its next page load.
+    cache: "no-store",
   });
   if (!res.ok) throw new Error(`API ${path} → ${res.status}`);
   return res.json() as Promise<T>;

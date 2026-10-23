@@ -266,12 +266,12 @@ export default function OnboardingView({ initial, summary }: Props) {
     }
   }
 
-  // Multi-select: a new status tab starts a new selection, so nothing hidden
-  // by the tab is ever sent by mistake.
+  // Multi-select: changing the tab, school, sport or search starts a new
+  // selection, so a row hidden by the current view is never sent by mistake.
   useEffect(() => {
     setSelected(new Set());
     setConfirmBulk(null);
-  }, [filter]);
+  }, [filter, school, sport, search]);
 
   function toggleSelected(id: number) {
     setSelected((prev) => {

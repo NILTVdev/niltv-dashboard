@@ -38,7 +38,7 @@ export default function UsersView() {
   const [users, setUsers] = useState<DashboardUser[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [form, setForm] = useState({ email: "", name: "", role: "admin" as Role, password: "" });
+  const [form, setForm] = useState({ email: "", name: "", role: "general" as Role, password: "" });
   const [busy, setBusy] = useState(false);
   const [resetFor, setResetFor] = useState<number | null>(null);
   const [resetPw, setResetPw] = useState("");
