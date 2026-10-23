@@ -837,7 +837,7 @@ function Detail({ row, busy, onRun }: { row: Application; busy: boolean; onRun: 
       {/* Application: the four things approval needs, then everything else behind View more */}
       <section>
         <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Application</h3>
-        <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1.5 text-sm">
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
           <Dt>Name</Dt><Dd><Need ok={!missing.has("name")}>{[row.first_name, row.last_name].filter(Boolean).join(" ")}</Need></Dd>
           <Dt>Email</Dt><Dd><Need ok={!missing.has("email")}><a className="hover:underline" href={`mailto:${row.email}`}>{row.email}</a></Need></Dd>
           <Dt>Roster</Dt><Dd><Need ok={!missing.has("roster link")}>{row.roster_link && <a className="text-[var(--brand)] hover:underline break-all" href={row.roster_link} target="_blank" rel="noreferrer">{row.roster_link.replace(/^https?:\/\/(www\.)?/, "")}</a>}</Need></Dd>
@@ -854,7 +854,7 @@ function Detail({ row, busy, onRun }: { row: Application; busy: boolean; onRun: 
           {more ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />} {more ? "Less" : "View more"}
         </button>
         {more && (
-          <dl className="mt-2 grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-sm border-t pt-2">
+          <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm border-t pt-2">
             <Dt>Phone</Dt><Dd>{row.phone}</Dd>
             <Dt>College email</Dt><Dd>{row.college_email}</Dd>
             <Dt>International</Dt><Dd>{row.international === true ? "yes" : row.international === false ? "no" : ""}</Dd>
