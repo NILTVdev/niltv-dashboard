@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { LogOut, UserCircle, Users } from "lucide-react";
@@ -34,6 +34,13 @@ export default function Navbar() {
       .catch(() => setMe(null));
   }, [pathname]);
 
+  // When the links scroll, keep the current page's link in view.
+  const navRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    navRef.current?.querySelector<HTMLElement>('[aria-current="page"]')
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [pathname, me]);
+
   if (pathname === "/login") return null;
 
   const links = me ? LINKS.filter((l) => canSeePage(me.role, l.href)) : [];
@@ -46,46 +53,51 @@ export default function Navbar() {
 
   return (
     <header className="sticky top-0 z-50 bg-[var(--brand)] text-white shadow-md">
-      <div className="max-w-screen-xl mx-auto px-4 h-14 flex items-center gap-6">
+      <div className="max-w-screen-xl mx-auto px-4 h-14 flex items-center gap-3 sm:gap-6">
         <Link href={HOME} className="flex items-center shrink-0">
           {/* 150x56 export on a black ground; screen-blended so the black
               drops into the near-black bar. */}
           <Image src="/niltv-logo.png" alt="NIL TV" width={107} height={40}
-                 className="mix-blend-screen" priority />
+                 className="mix-blend-screen h-8 w-auto sm:h-10" priority />
         </Link>
 
-        <nav className="flex gap-1 flex-1">
-          {links.map((l) => (
-            <Link
-              key={l.href}
-              href={l.href}
-              className={cn(
-                "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
-                pathname === l.href || pathname.startsWith(`${l.href}/`)
-                  ? "bg-white/20"
-                  : "hover:bg-white/10 text-white/80"
-              )}
-            >
-              {l.label}
-            </Link>
-          ))}
+        {/* On a narrow screen the links scroll sideways inside the bar
+            instead of pushing the whole page wider. */}
+        <nav ref={navRef} className="flex flex-1 min-w-0 gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {links.map((l) => {
+            const active = pathname === l.href || pathname.startsWith(`${l.href}/`);
+            return (
+              <Link
+                key={l.href}
+                href={l.href}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "shrink-0 whitespace-nowrap px-2 sm:px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+                  active ? "bg-white/20" : "hover:bg-white/10 text-white/80"
+                )}
+              >
+                {l.label}
+              </Link>
+            );
+          })}
         </nav>
 
         {me?.role === "admin" && (
           <Link href="/users" title="Dashboard accounts"
-                className={cn("flex items-center gap-1.5 px-2 py-1.5 rounded-md text-sm font-medium transition-colors",
+                className={cn("flex shrink-0 items-center gap-1.5 px-2 py-1.5 rounded-md text-sm font-medium transition-colors",
                   pathname === "/users" ? "bg-white/20" : "text-white/80 hover:bg-white/10")}>
             <Users size={16} />
-            Users
+            <span className="hidden sm:inline">Users</span>
           </Link>
         )}
         {me && (
           <Link href="/account" title={`${me.email} · ${ROLE_LABEL[me.role]}`}
-                className={cn("flex items-center gap-1.5 px-2 py-1.5 rounded-md text-sm font-medium transition-colors whitespace-nowrap",
+                className={cn("flex shrink-0 items-center gap-1.5 px-2 py-1.5 rounded-md text-sm font-medium transition-colors whitespace-nowrap",
                   pathname === "/account" ? "bg-white/20" : "text-white/80 hover:bg-white/10")}>
             <UserCircle size={16} />
-            <span className="max-w-[9rem] truncate">{me.name}</span>
-            <span className="rounded bg-white/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+            {/* Phones get the icons only; the title still names the account. */}
+            <span className="hidden max-w-[9rem] truncate sm:inline">{me.name}</span>
+            <span className="hidden rounded bg-white/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide sm:inline">
               {ROLE_LABEL[me.role]}
             </span>
           </Link>
@@ -93,10 +105,11 @@ export default function Navbar() {
 
         <button
           onClick={handleLogout}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium text-white/80 hover:bg-white/10 transition-colors"
+          title="Logout"
+          className="flex shrink-0 items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium text-white/80 hover:bg-white/10 transition-colors"
         >
           <LogOut size={16} />
-          Logout
+          <span className="hidden sm:inline">Logout</span>
         </button>
       </div>
     </header>
