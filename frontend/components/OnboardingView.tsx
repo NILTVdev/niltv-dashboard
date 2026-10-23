@@ -452,29 +452,35 @@ export default function OnboardingView({ initial, summary }: Props) {
         />
       )}
 
+      {/* On a phone (below sm) the table turns into stacked rows: the header
+          keeps only Select all, and each row is a small grid with the
+          checkbox and chevron beside name, school, status and actions. */}
       <div className="overflow-x-auto rounded-xl border bg-white shadow-sm">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
-            <tr>
-              <th className="pl-3 py-2 w-6">
-                <input type="checkbox" aria-label="Select all shown" checked={allVisibleSelected}
-                       onChange={toggleAllVisible} disabled={filtered.length === 0 || bulkRunning} />
+        <table className="w-full text-sm max-sm:block">
+          <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500 max-sm:block">
+            <tr className="max-sm:flex max-sm:items-center">
+              <th className="pl-3 py-2 w-6 max-sm:w-auto">
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" aria-label="Select all shown" checked={allVisibleSelected}
+                         onChange={toggleAllVisible} disabled={filtered.length === 0 || bulkRunning} />
+                  <span className="sm:hidden">Select all</span>
+                </label>
               </th>
-              <th className="px-3 py-2 w-8" />
-              <th className="px-3 py-2">Athlete</th>
-              <th className="px-3 py-2">School / Sport</th>
-              <th className="px-3 py-2">Status</th>
+              <th className="px-3 py-2 w-8 max-sm:hidden" />
+              <th className="px-3 py-2 max-sm:hidden">Athlete</th>
+              <th className="px-3 py-2 max-sm:hidden">School / Sport</th>
+              <th className="px-3 py-2 max-sm:hidden">Status</th>
               {/* Progress and Applied are the first to go below desktop width;
                   the status line already says where the row is. */}
               <th className="hidden px-3 py-2 lg:table-cell">Progress</th>
               <th className="hidden px-3 py-2 lg:table-cell">Applied</th>
-              <th className="px-3 py-2 text-right">Actions</th>
+              <th className="px-3 py-2 text-right max-sm:hidden">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y">
+          <tbody className="divide-y max-sm:block">
             {filtered.length === 0 && (
-              <tr>
-                <td colSpan={8} className="px-3 py-10 text-center text-gray-400">
+              <tr className="max-sm:block">
+                <td colSpan={8} className="px-3 py-10 text-center text-gray-400 max-sm:block">
                   {rows.length === 0 ? "No applications yet. The signup form on niltv.com posts here." : "Nothing matches these filters."}
                 </td>
               </tr>
@@ -484,24 +490,25 @@ export default function OnboardingView({ initial, summary }: Props) {
               const wait = waitingOn(r);
               return (
                 <RowGroup key={r.id} open={open}>
-                  <tr className={cn("hover:bg-gray-50 cursor-pointer", open && "bg-[var(--brand-pale)]/40")} onClick={() => toggle(r.id)}>
-                    <td className="pl-3 py-2" onClick={(e) => e.stopPropagation()}>
+                  <tr className={cn("hover:bg-gray-50 cursor-pointer max-sm:grid max-sm:grid-cols-[auto_minmax(0,1fr)_auto] max-sm:py-1.5",
+                    open && "bg-[var(--brand-pale)]/40")} onClick={() => toggle(r.id)}>
+                    <td className="pl-3 py-2 max-sm:col-start-1 max-sm:row-start-1" onClick={(e) => e.stopPropagation()}>
                       <input type="checkbox" aria-label={`Select ${r.first_name ?? ""} ${r.last_name ?? ""}`}
                              checked={selected.has(r.id)} onChange={() => toggleSelected(r.id)} disabled={bulkRunning} />
                     </td>
-                    <td className="px-3 py-2 text-gray-400">{open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2 text-gray-400 max-sm:col-start-3 max-sm:row-start-1">{open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</td>
+                    <td className="px-3 py-2 max-sm:col-start-2 max-sm:row-start-1 max-sm:pb-0.5">
                       <div className="font-medium">{r.first_name} {r.last_name}</div>
                       <div className="text-xs text-gray-500">
                         {r.instagram ? `@${r.instagram}` : r.email}
                         {r.international && <span className="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-600" title="International student (from the form)">INTL</span>}
                       </div>
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2 max-sm:col-start-2 max-sm:row-start-2 max-sm:py-0.5">
                       <div>{r.university ?? <span className="text-gray-400">?</span>}</div>
                       <div className="text-xs text-gray-500">{[r.sport, r.year].filter(Boolean).join(" · ")}</div>
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2 max-sm:col-start-2 max-sm:row-start-3 max-sm:pt-1.5">
                       <span className={cn("inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ring-1", STATUS_STYLE[r.status])}>
                         {STATUS_LABEL[r.status]}
                       </span>
@@ -515,13 +522,13 @@ export default function OnboardingView({ initial, summary }: Props) {
                     </td>
                     <td className="hidden px-3 py-2 lg:table-cell"><Progress steps={r.progress} /></td>
                     <td className="hidden px-3 py-2 text-xs text-gray-500 whitespace-nowrap lg:table-cell">{fmtDate(r.created_at)}</td>
-                    <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+                    <td className="px-3 py-2 text-right max-sm:col-span-2 max-sm:col-start-2 max-sm:row-start-4" onClick={(e) => e.stopPropagation()}>
                       <Actions row={r} busy={busy === r.id} onRun={(a, b) => run(r.id, a, b)} />
                     </td>
                   </tr>
                   {open && (
-                    <tr className="bg-[var(--brand-pale)]/30">
-                      <td colSpan={8} className="px-6 py-4">
+                    <tr className="bg-[var(--brand-pale)]/30 max-sm:block">
+                      <td colSpan={8} className="px-6 py-4 max-sm:block">
                         <Detail row={r} busy={busy === r.id} onRun={(a, b) => run(r.id, a, b)} />
                       </td>
                     </tr>
@@ -700,7 +707,8 @@ function Btn({ children, onClick, disabled, tone = "default", title }: {
       disabled={disabled}
       title={title}
       className={cn(
-        "inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors disabled:opacity-50",
+        // Bigger tap targets on a phone.
+        "inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors disabled:opacity-50 max-sm:px-3 max-sm:py-2 max-sm:text-sm",
         tone === "primary" && "bg-[var(--brand)] text-white hover:opacity-90",
         tone === "quiet" && "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
         tone === "default" && "border text-gray-700 hover:bg-gray-50",
