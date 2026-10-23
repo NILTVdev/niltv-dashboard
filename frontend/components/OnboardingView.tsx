@@ -464,8 +464,10 @@ export default function OnboardingView({ initial, summary }: Props) {
               <th className="px-3 py-2">Athlete</th>
               <th className="px-3 py-2">School / Sport</th>
               <th className="px-3 py-2">Status</th>
-              <th className="px-3 py-2">Progress</th>
-              <th className="px-3 py-2">Applied</th>
+              {/* Progress and Applied are the first to go below desktop width;
+                  the status line already says where the row is. */}
+              <th className="hidden px-3 py-2 lg:table-cell">Progress</th>
+              <th className="hidden px-3 py-2 lg:table-cell">Applied</th>
               <th className="px-3 py-2 text-right">Actions</th>
             </tr>
           </thead>
@@ -511,8 +513,8 @@ export default function OnboardingView({ initial, summary }: Props) {
                         </div>
                       )}
                     </td>
-                    <td className="px-3 py-2"><Progress steps={r.progress} /></td>
-                    <td className="px-3 py-2 text-xs text-gray-500 whitespace-nowrap">{fmtDate(r.created_at)}</td>
+                    <td className="hidden px-3 py-2 lg:table-cell"><Progress steps={r.progress} /></td>
+                    <td className="hidden px-3 py-2 text-xs text-gray-500 whitespace-nowrap lg:table-cell">{fmtDate(r.created_at)}</td>
                     <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
                       <Actions row={r} busy={busy === r.id} onRun={(a, b) => run(r.id, a, b)} />
                     </td>
