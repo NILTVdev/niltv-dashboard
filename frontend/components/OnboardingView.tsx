@@ -365,13 +365,14 @@ export default function OnboardingView({ initial, summary }: Props) {
           next. One wrapping row used to strand the search box on a second
           line, right-aligned by ml-auto, at tablet widths. */}
       <div className="mb-2 flex flex-wrap items-center gap-2">
-      <div className="flex flex-wrap gap-1 rounded-lg bg-gray-100 p-1 w-fit max-w-full">
+      {/* On a phone the tabs stay on one line and swipe sideways. */}
+      <div className="flex flex-wrap gap-1 rounded-lg bg-gray-100 p-1 w-fit max-w-full max-sm:flex-nowrap max-sm:overflow-x-auto max-sm:[scrollbar-width:none] max-sm:[&::-webkit-scrollbar]:hidden">
         {FILTERS.map((f) => (
           <button
             key={f.key}
             onClick={() => setFilter(f.key)}
             className={cn(
-              "h-7 px-3 rounded-md text-xs font-semibold transition-colors",
+              "h-7 shrink-0 whitespace-nowrap px-3 rounded-md text-xs font-semibold transition-colors",
               filter === f.key ? "bg-white text-[var(--brand)] shadow-sm" : "text-gray-600 hover:text-gray-900",
             )}
           >
@@ -407,18 +408,18 @@ export default function OnboardingView({ initial, summary }: Props) {
       )}
       {showRuns && runs.length > 0 && <RunLog runs={runs} />}
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <select value={school} onChange={(e) => setSchool(e.target.value)} className="h-9 rounded-md border px-2 text-sm bg-white">
+        <select value={school} onChange={(e) => setSchool(e.target.value)} className="h-9 rounded-md border px-2 text-sm bg-white max-sm:min-w-0 max-sm:flex-1">
           <option value="all">Schools ({schools.length})</option>
           {schools.map(([s, n]) => <option key={s} value={s}>{s} ({n})</option>)}
         </select>
-        <select value={sport} onChange={(e) => setSport(e.target.value)} className="h-9 rounded-md border px-2 text-sm bg-white">
+        <select value={sport} onChange={(e) => setSport(e.target.value)} className="h-9 rounded-md border px-2 text-sm bg-white max-sm:min-w-0 max-sm:flex-1">
           <option value="all">Sports ({sports.length})</option>
           {sports.map(([s, n]) => <option key={s} value={s}>{s} ({n})</option>)}
         </select>
         {/* Grows into whatever is left of the row (capped), instead of a fixed
             box that either fits or wraps; on a narrow screen it takes the
             full width of its own row. */}
-        <label className="relative flex-1 min-w-[12rem] sm:max-w-xs sm:ml-auto">
+        <label className="relative flex-1 min-w-[12rem] sm:max-w-xs sm:ml-auto max-sm:basis-full">
           <Search className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
           <input
             value={search}
@@ -528,7 +529,7 @@ export default function OnboardingView({ initial, summary }: Props) {
                   </tr>
                   {open && (
                     <tr className="bg-[var(--brand-pale)]/30 max-sm:block">
-                      <td colSpan={8} className="px-6 py-4 max-sm:block">
+                      <td colSpan={8} className="px-6 py-4 max-sm:block max-sm:px-4">
                         <Detail row={r} busy={busy === r.id} onRun={(a, b) => run(r.id, a, b)} />
                       </td>
                     </tr>
