@@ -1,4 +1,4 @@
-"""Schema tests for the Athlete Content Hub tables (migration 030).
+"""Schema tests for the Athlete Content Hub tables (migrations 032, 033).
 
 Runs against the seeded Postgres like the other functional tests. Covers the
 rules the schema itself enforces: one claim row per athlete per ask, the
@@ -12,14 +12,16 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 
 from backend.database import SessionLocal
-from backend.models import Application, HubAsk, HubClaim, HubSubmission
+from backend.models import Application, DashboardUser, HubAsk, HubClaim, HubSubmission
 
 EMAIL = "hub.tester@example.com"
+STAFF_EMAIL = "hub.staff@example.com"
 
 
 def _clean(db):
     db.query(HubAsk).filter(HubAsk.created_by == "pytest").delete()
     db.query(Application).filter(Application.email == EMAIL).delete()
+    db.query(DashboardUser).filter(DashboardUser.email == STAFF_EMAIL).delete()
     db.commit()
 
 
@@ -58,6 +60,8 @@ def test_ask_defaults(db):
     assert ask.status == "open"
     assert ask.steps == ["Film vertical", "Post as a collab"]
     assert ask.slots is None
+    assert ask.tags == []
+    assert ask.format is None
     assert ask.created_at is not None
     assert ask.closed_at is None
 
@@ -142,3 +146,53 @@ def test_deleting_the_athlete_removes_their_claims(db, athlete):
     db.commit()
     assert db.query(HubClaim).filter(HubClaim.ask_id == ask.id).count() == 0
     assert db.query(HubAsk).filter(HubAsk.id == ask.id).count() == 1   # the ask itself stays
+
+
+def test_tags_and_format_are_stored_and_filterable(db):
+    ask = _ask(db, format="Reel", tags=["football", "lifestyle"])
+    _ask(db, title="Podcast pitch", tags=["podcast"])
+    db.refresh(ask)
+    assert ask.format == "Reel"
+    assert ask.tags == ["football", "lifestyle"]
+    tagged = db.query(HubAsk).filter(HubAsk.created_by == "pytest", HubAsk.tags.any("lifestyle")).all()
+    assert [a.id for a in tagged] == [ask.id]
+
+
+def test_staff_approval_records_who_and_when(db, athlete):
+    staff = DashboardUser(email=STAFF_EMAIL, name="Hub Staff", role="admin", password_hash="x")
+    db.add(staff)
+    ask = _ask(db)
+    claim = HubClaim(ask_id=ask.id, application_id=athlete.id, status="submitted")
+    db.add(claim)
+    db.commit()
+    claim.status = "approved"
+    claim.reviewed_by = staff.id
+    claim.reviewed_at = datetime.now(tz=timezone.utc)
+    db.commit()
+    db.refresh(claim)
+    assert claim.status == "approved"
+    assert claim.reviewed_by == staff.id
+
+
+def test_claim_status_is_checked(db, athlete):
+    ask = _ask(db)
+    db.add(HubClaim(ask_id=ask.id, application_id=athlete.id, status="paid"))
+    with pytest.raises(IntegrityError):
+        db.commit()
+    db.rollback()
+
+
+def test_removing_the_reviewer_keeps_the_approval(db, athlete):
+    staff = DashboardUser(email=STAFF_EMAIL, name="Hub Staff", role="admin", password_hash="x")
+    db.add(staff)
+    ask = _ask(db)
+    db.commit()
+    claim = HubClaim(ask_id=ask.id, application_id=athlete.id, status="approved",
+                     reviewed_by=staff.id, reviewed_at=datetime.now(tz=timezone.utc))
+    db.add(claim)
+    db.commit()
+    db.delete(staff)
+    db.commit()
+    db.refresh(claim)
+    assert claim.status == "approved"
+    assert claim.reviewed_by is None
