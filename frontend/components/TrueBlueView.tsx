@@ -1,5 +1,5 @@
 "use client";
-import { useBrand } from "@/components/BrandProvider";
+import { COLORS } from "@/lib/theme";
 
 import { useState, useCallback, useMemo, Fragment } from "react";
 import {
@@ -100,7 +100,6 @@ function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: 
 /* ── @trueblue_tv Post Views Chart ──────────────────── */
 
 function PostViewsChart({ posts }: { posts: TrueBluePost[] }) {
-  const { brand: uiBrand } = useBrand();
   // Aggregate by date so multiple posts on the same day stack up
   const byDate = new Map<string, number>();
   for (const p of posts) {
@@ -128,7 +127,7 @@ function PostViewsChart({ posts }: { posts: TrueBluePost[] }) {
         <YAxis tickFormatter={(v) => fmt(v)} tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} width={48} />
         <Tooltip content={<ChartTooltip />} />
         <Legend wrapperStyle={{ fontSize: 12 }} />
-        <Bar dataKey="views" name="Views" fill={uiBrand.colors.brand} radius={[4, 4, 0, 0]} />
+        <Bar dataKey="views" name="Views" fill={COLORS.brand} radius={[4, 4, 0, 0]} />
       </BarChart>
     </ResponsiveContainer>
   );
@@ -186,7 +185,6 @@ function truncateUsername(name: string, max = 12): string {
 }
 
 function TopAccountsChart({ accounts }: { accounts: TrueBlueTopAccount[] }) {
-  const { brand: uiBrand } = useBrand();
   const [page, setPage] = useState(0);
   const totalPages = Math.ceil(accounts.length / CHART_ACCOUNTS_PER_PAGE);
   const pageAccounts = accounts.slice(page * CHART_ACCOUNTS_PER_PAGE, (page + 1) * CHART_ACCOUNTS_PER_PAGE);
@@ -218,7 +216,7 @@ function TopAccountsChart({ accounts }: { accounts: TrueBlueTopAccount[] }) {
               );
             }}
           />
-          <Bar dataKey="views" name="Views" fill={uiBrand.colors.brand} radius={[4, 4, 0, 0]} />
+          <Bar dataKey="views" name="Views" fill={COLORS.brand} radius={[4, 4, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
       {totalPages > 1 && (
@@ -315,7 +313,6 @@ function TopAccountsTable({ accounts }: { accounts: TrueBlueTopAccount[] }) {
 /* ── Network Views Over Time (split chart) ─────────── */
 
 function NetworkViewsChart({ data }: { data: NetworkMetricsOverTime[] }) {
-  const { brand: uiBrand } = useBrand();
   if (data.length < 2) {
     return (
       <div className="h-48 flex items-center justify-center text-sm text-[#94a3b8]">
@@ -340,7 +337,7 @@ function NetworkViewsChart({ data }: { data: NetworkMetricsOverTime[] }) {
         <YAxis tickFormatter={(v) => fmt(v)} tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} width={56} />
         <Tooltip content={<ChartTooltip />} />
         <Legend wrapperStyle={{ fontSize: 12 }} />
-        <Line type="monotone" dataKey="views" name="Views" stroke={uiBrand.colors.brand} strokeWidth={2} dot={false} />
+        <Line type="monotone" dataKey="views" name="Views" stroke={COLORS.brand} strokeWidth={2} dot={false} />
         <Line type="monotone" dataKey="reach" name="Reach" stroke="#7c3aed" strokeWidth={2} dot={false} />
         {hasProjected && (
           <Line type="monotone" dataKey="projectedReach" name="Proj. Reach" stroke="#7c3aed" strokeWidth={1.5} strokeDasharray="6 3" dot={false} />
@@ -387,7 +384,6 @@ function NetworkEngagementChart({ data }: { data: NetworkMetricsOverTime[] }) {
 /* ── Account-Level Charts (from network posts by publish date) ────── */
 
 function AccountViewsChart({ posts }: { posts: TrueBlueNetworkPost[] }) {
-  const { brand: uiBrand } = useBrand();
   const data = [...posts]
     .filter((p) => p.publish_time != null)
     .sort((a, b) => (a.publish_time ?? "").localeCompare(b.publish_time ?? ""))
@@ -416,7 +412,7 @@ function AccountViewsChart({ posts }: { posts: TrueBlueNetworkPost[] }) {
         <YAxis tickFormatter={(v) => fmt(v)} tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} width={56} />
         <Tooltip content={<ChartTooltip />} />
         <Legend wrapperStyle={{ fontSize: 12 }} />
-        <Line type="monotone" dataKey="views" name="Views" stroke={uiBrand.colors.brand} strokeWidth={2} dot={{ r: 2, fill: uiBrand.colors.brand }} activeDot={{ r: 4 }} />
+        <Line type="monotone" dataKey="views" name="Views" stroke={COLORS.brand} strokeWidth={2} dot={{ r: 2, fill: COLORS.brand }} activeDot={{ r: 4 }} />
         <Line type="monotone" dataKey="reach" name="Reach" stroke="#7c3aed" strokeWidth={2} dot={{ r: 2, fill: "#7c3aed" }} activeDot={{ r: 4 }} />
         {hasProjected && (
           <Line type="monotone" dataKey="projectedReach" name="Proj. Reach" stroke="#7c3aed" strokeWidth={1.5} strokeDasharray="6 3" dot={false} />
@@ -481,7 +477,6 @@ function buildCumulativeViews(posts: TrueBlueNetworkPost[]) {
 }
 
 function AccountCumulativeViewsChart({ posts }: { posts: TrueBlueNetworkPost[] }) {
-  const { brand: uiBrand } = useBrand();
   const data = buildCumulativeViews(posts);
 
   if (data.length < 2) {
@@ -502,7 +497,7 @@ function AccountCumulativeViewsChart({ posts }: { posts: TrueBlueNetworkPost[] }
         <YAxis tickFormatter={(v) => fmt(v)} tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} width={56} />
         <Tooltip content={<ChartTooltip />} />
         <Legend wrapperStyle={{ fontSize: 12 }} />
-        <Line type="monotone" dataKey="views" name="Total Views" stroke={uiBrand.colors.brand} strokeWidth={2} dot={false} />
+        <Line type="monotone" dataKey="views" name="Total Views" stroke={COLORS.brand} strokeWidth={2} dot={false} />
         <Line type="monotone" dataKey="reach" name="Total Reach" stroke="#7c3aed" strokeWidth={2} dot={false} />
         {hasProjected && (
           <Line type="monotone" dataKey="projectedReach" name="Total Proj. Reach" stroke="#7c3aed" strokeWidth={1.5} strokeDasharray="6 3" dot={false} />
@@ -558,7 +553,6 @@ function AccountCumulativeEngagementChart({ posts }: { posts: TrueBlueNetworkPos
 /* ── Post History Charts (per-post, split views+reach / engagement) ── */
 
 function PostHistoryCharts({ snapshots, post }: { snapshots: TrueBlueNetworkPostSnapshot[]; post: TrueBlueNetworkPost }) {
-  const { brand: uiBrand } = useBrand();
   const data = [
     ...snapshots.map((s) => ({
       date: fmtDate(s.captured_at),
@@ -601,7 +595,7 @@ function PostHistoryCharts({ snapshots, post }: { snapshots: TrueBlueNetworkPost
             <YAxis tickFormatter={(v) => fmt(v)} tick={{ fontSize: 9, fill: "#94a3b8" }} tickLine={false} axisLine={false} width={44} />
             <Tooltip content={<ChartTooltip />} />
             <Legend wrapperStyle={{ fontSize: 10 }} />
-            <Line type="monotone" dataKey="views" name="Views" stroke={uiBrand.colors.brand} strokeWidth={2} dot={{ r: 2 }} />
+            <Line type="monotone" dataKey="views" name="Views" stroke={COLORS.brand} strokeWidth={2} dot={{ r: 2 }} />
             <Line type="monotone" dataKey="reach" name="Reach" stroke="#7c3aed" strokeWidth={2} dot={{ r: 2 }} />
             {hasProjected && (
               <Line type="monotone" dataKey="projectedReach" name="Proj. Reach" stroke="#7c3aed" strokeWidth={1.5} strokeDasharray="6 3" dot={{ r: 2 }} />

@@ -632,6 +632,37 @@ class Application(Base):
     )
 
 
+class DashboardUser(Base):
+    """A dashboard login (migration 030). Roles: admin | general | demo."""
+    __tablename__ = "dashboard_users"
+
+    id = Column(Integer, primary_key=True)
+    email = Column(Text, nullable=False, unique=True)
+    name = Column(Text, nullable=False)
+    role = Column(Text, nullable=False)
+    password_hash = Column(Text, nullable=False)
+    active = Column(Boolean, nullable=False, server_default="true")
+    session_version = Column(Integer, nullable=False, server_default="1")  # migration 031
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+    created_by = Column(Text)
+    updated_at = Column(TIMESTAMP(timezone=True))
+    last_login_at = Column(TIMESTAMP(timezone=True))
+
+
+class ReconcileRun(Base):
+    """One nightly or staff-triggered re-check of every open application
+    against DocuSign and Stripe (migration 029)."""
+    __tablename__ = "reconcile_runs"
+
+    id = Column(Integer, primary_key=True)
+    started_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+    finished_at = Column(TIMESTAMP(timezone=True))
+    trigger = Column(Text, nullable=False)      # nightly | staff
+    triggered_by = Column(Text)
+    stats = Column(JSON)
+    error = Column(Text)
+
+
 class ApplicationEvent(Base):
     """Timeline row for an application: transitions, emails, webhooks, staff
     actions. Drives the 'what do they still need' view and the audit trail."""

@@ -1,5 +1,5 @@
 "use client";
-import { useBrand } from "@/components/BrandProvider";
+import { COLORS } from "@/lib/theme";
 
 import {
   LineChart,
@@ -18,7 +18,6 @@ interface Props {
 }
 
 export default function FollowerChart({ snapshots }: Props) {
-  const { brand: uiBrand } = useBrand();
   const data = [...snapshots]
     .filter((s) => s.ig_followers != null)
     .reverse()
@@ -60,7 +59,7 @@ export default function FollowerChart({ snapshots }: Props) {
         <Line
           type="monotone"
           dataKey="followers"
-          stroke={uiBrand.colors.brand}
+          stroke={COLORS.brand}
           strokeWidth={2}
           dot={false}
           activeDot={{ r: 4 }}
