@@ -26,7 +26,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
-from backend.auth import require_api_key
+from backend.auth import actor_name, require_api_key
 from backend.database import SessionLocal, get_db
 from backend.models import Application, ReconcileRun
 from backend.onboarding import cognito, docusign, pipeline, reconcile, schools, stripe_connect
@@ -361,6 +361,7 @@ def _execute_in_background(run_id: int) -> None:
 @router.post("/reconcile")
 def start_reconcile(
     background_tasks: BackgroundTasks,
+    request: Request,
     scope: str = Query("all", description="all | open | agreement_sent | stripe_pending | accepted"),
     db: Session = Depends(get_db),
 ):
@@ -372,7 +373,7 @@ def start_reconcile(
     active = reconcile.running(db)
     if active:
         raise HTTPException(status_code=409, detail=f"A refresh is already running (run {active.id})")
-    run = reconcile.start(db, "staff", by="dashboard", scope=scope)
+    run = reconcile.start(db, "staff", by=actor_name(request, "dashboard"), scope=scope)
     background_tasks.add_task(_execute_in_background, run.id)
     return _run_out(run)
 
@@ -403,10 +404,11 @@ class ReviewIn(BaseModel):
 
 
 @router.post("/{application_id}/approve", response_model=ApplicationDetailOut)
-def approve_application(application_id: int, payload: Optional[ReviewIn] = None, db: Session = Depends(get_db)):
+def approve_application(application_id: int, request: Request, payload: Optional[ReviewIn] = None,
+                        db: Session = Depends(get_db)):
     app = _get(db, application_id)
     try:
-        result = pipeline.approve(db, app, by=(payload.by if payload and payload.by else "staff"))
+        result = pipeline.approve(db, app, by=actor_name(request, (payload.by if payload and payload.by else "staff")))
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
     db.refresh(app)
@@ -418,11 +420,12 @@ def approve_application(application_id: int, payload: Optional[ReviewIn] = None,
 
 
 @router.post("/{application_id}/decline", response_model=ApplicationDetailOut)
-def decline_application(application_id: int, payload: Optional[ReviewIn] = None, db: Session = Depends(get_db)):
+def decline_application(application_id: int, request: Request, payload: Optional[ReviewIn] = None,
+                        db: Session = Depends(get_db)):
     app = _get(db, application_id)
     try:
         pipeline.decline(db, app, reason=(payload.reason if payload else "") or "",
-                         by=(payload.by if payload and payload.by else "staff"),
+                         by=actor_name(request, (payload.by if payload and payload.by else "staff")),
                          notify=bool(payload and payload.notify))
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))

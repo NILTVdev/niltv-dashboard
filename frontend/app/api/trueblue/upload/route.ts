@@ -1,13 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isValidSession } from "@/lib/session";
+import { sameOrigin } from "@/lib/requestGuards";
+import { backendHeaders, getSession, SESSION_COOKIE } from "@/lib/session";
 
-import { API_KEY, BACKEND_URL as BACKEND } from "@/lib/serverEnv";
+import { BACKEND_URL as BACKEND } from "@/lib/serverEnv";
 
 export async function POST(request: NextRequest) {
   // Auth check — validate hashed cookie token
-  const token = request.cookies.get("auth_token")?.value;
-  if (!(await isValidSession(token))) {
+  const session = await getSession(request.cookies.get(SESSION_COOKIE)?.value);
+  if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (session.role !== "admin") {
+    return NextResponse.json({ error: "Admins only" }, { status: 403 });
+  }
+  if (!sameOrigin(request.headers.get("origin"), request.headers.get("host"))) {
+    return NextResponse.json({ error: "Cross-site request refused" }, { status: 403 });
   }
 
   // Forward the multipart form data to the backend
@@ -22,7 +29,7 @@ export async function POST(request: NextRequest) {
 
   const res = await fetch(`${BACKEND}/api/trueblue/network/upload-csv`, {
     method: "POST",
-    headers: { "X-API-Key": API_KEY },
+    headers: backendHeaders(session),
     body: backendForm,
   });
 

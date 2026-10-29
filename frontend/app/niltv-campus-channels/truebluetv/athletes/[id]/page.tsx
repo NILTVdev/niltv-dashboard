@@ -7,6 +7,7 @@ import PostsGrid from "@/components/PostsGrid";
 import { fmt, fmtDate } from "@/lib/utils";
 import { ArrowLeft } from "lucide-react";
 import InstagramIcon from "@/components/icons/InstagramIcon";
+import { TRUEBLUETV } from "@/lib/channels";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +47,7 @@ export default async function AthleteDetailPage({ params }: Props) {
     <div className="space-y-6">
       {/* Back */}
       <Link
-        href="/"
+        href={`${TRUEBLUETV}/roster`}
         className="inline-flex items-center gap-1.5 text-sm text-[#64748b] hover:text-[var(--brand)] transition-colors"
       >
         <ArrowLeft size={14} /> Back to Roster

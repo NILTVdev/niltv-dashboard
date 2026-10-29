@@ -1,5 +1,5 @@
 "use client";
-import { useBrand } from "@/components/BrandProvider";
+import { COLORS } from "@/lib/theme";
 
 import {
   LineChart, Line, BarChart, Bar,
@@ -14,7 +14,6 @@ interface Props {
 }
 
 export default function GA4Charts({ snapshots, summary }: Props) {
-  const { brand: uiBrand } = useBrand();
   // Aggregate snapshots by date (sum across all source/medium combos)
   const byDay: Record<string, { sessions: number; users: number; pageviews: number }> = {};
   for (const s of snapshots) {
@@ -58,8 +57,8 @@ export default function GA4Charts({ snapshots, summary }: Props) {
               />
               <Tooltip contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Line type="monotone" dataKey="sessions" stroke={uiBrand.colors.brand} strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="users" stroke={uiBrand.colors.brandLight} strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="sessions" stroke={COLORS.brand} strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="users" stroke={COLORS.brandLight} strokeWidth={2} dot={false} />
               <Line type="monotone" dataKey="pageviews" stroke="#94a3b8" strokeWidth={1.5} dot={false} />
             </LineChart>
           </ResponsiveContainer>
@@ -99,7 +98,7 @@ export default function GA4Charts({ snapshots, summary }: Props) {
                 formatter={(v: unknown) => [fmt(v as number | undefined), "Sessions"] as [string, string]}
                 contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }}
               />
-              <Bar dataKey="sessions" fill={uiBrand.colors.brand} radius={[0, 4, 4, 0]} />
+              <Bar dataKey="sessions" fill={COLORS.brand} radius={[0, 4, 4, 0]} />
             </BarChart>
           </ResponsiveContainer>
         ) : (

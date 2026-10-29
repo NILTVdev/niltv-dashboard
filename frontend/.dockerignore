@@ -1,0 +1,11 @@
+# prevent /frontend/node_modules and build output from being copied to Docker image
+node_modules
+.next
+out
+build
+coverage
+.env*
+!.env.example
+*.tsbuildinfo
+next-env.d.ts
+npm-debug.log*
