@@ -606,3 +606,49 @@ export interface ReconcileRun {
     changes?: ReconcileChange[];
   };
 }
+
+// ── Community Star (backend/routers/community_star.py) ───────────────────────
+
+export type CommunityStarStage = "applied" | "shortlist" | "finalist" | "top5" | "winner" | "disqualified";
+
+export interface CommunityStarApplication {
+  id: number;
+  season: string;
+  created_at: string;
+  full_name: string;
+  email: string;
+  phone: string;
+  school: string;
+  school_state: string | null;
+  school_matched: boolean;
+  sport: string;
+  class_year: string;
+  instagram: string;
+  post_url: string;
+  community: string;
+  work: string;
+  organization: string | null;
+  consent_email: boolean;
+  consent_sms: boolean;
+  consent_partners: boolean;
+  confirmation_sent: boolean;
+  utm: Record<string, string> | null;
+  collab_accepted: boolean;
+  stage: CommunityStarStage;
+  notes: string | null;
+  photo_url: string | null;
+  cause: string | null;
+  youtube_id: string | null;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+}
+
+export interface CommunityStarSummary {
+  season: string;
+  total: number;
+  schools: number;
+  collab_accepted: number;
+  by_stage: Record<CommunityStarStage, number>;
+  last_at: string | null;
+  window: { opens: string; closes: string; open: boolean };
+}
