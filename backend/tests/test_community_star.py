@@ -177,27 +177,139 @@ def test_staff_routes_need_key(db, mail, window_open):
     assert summary["total"] == 1 and summary["window"]["open"] is True
 
 
-def test_sheet_rows(db, mail, window_open, monkeypatch):
+# -- Review -----------------------------------------------------------------
+
+def _one(db):
     client.post(URL, json=FORM)
-    written = {}
-    monkeypatch.setattr(get_settings(), "community_star_sheet_id", "sheet-123")
-    monkeypatch.setattr(export_job.sheets, "write_table",
-                        lambda sid, tab, header, rows: written.update(sid=sid, tab=tab, header=header, rows=rows) or len(rows))
+    return db.query(CommunityStarApplication).one()
+
+
+def test_update_review_fields(db, mail, window_open):
+    a = _one(db)
+    r = client.post(f"{URL}/{a.id}/update", headers=AUTH, json={
+        "collab_accepted": True, "stage": "Top 5", "notes": "  strong video ",
+        "cause": "Reading hour for Durham kids", "youtube_id": "https://youtu.be/dQw4w9WgXcQ?t=3"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert sorted(body["changed"]) == ["cause", "collab_accepted", "notes", "stage", "youtube_id"]
+    out = body["application"]
+    assert out["stage"] == "top5" and out["collab_accepted"] is True
+    assert out["notes"] == "strong video" and out["youtube_id"] == "dQw4w9WgXcQ"
+    assert out["reviewed_by"] == "dashboard" and out["reviewed_at"]
+    summary = client.get("/api/community-star/summary", headers=AUTH).json()
+    assert summary["by_stage"]["top5"] == 1 and summary["collab_accepted"] == 1
+
+
+@pytest.mark.parametrize("body, status", [
+    ({"stage": "semifinal"}, 400),
+    ({"youtube_id": "not a video"}, 400),
+    ({"email": "x@example.com"}, 400),
+    ({}, 400),
+])
+def test_update_rejects_bad_fields(db, mail, window_open, body, status):
+    a = _one(db)
+    r = client.post(f"{URL}/{a.id}/update", headers=AUTH, json=body)
+    assert r.status_code == status
+    db.refresh(a)
+    assert a.stage == "applied" and a.email == "jane.doe@example.com"
+
+
+def test_update_needs_key_and_row(db, mail, window_open):
+    a = _one(db)
+    assert client.post(f"{URL}/{a.id}/update", json={"stage": "finalist"}).status_code == 401
+    assert client.post(f"{URL}/999999/update", headers=AUTH, json={"stage": "finalist"}).status_code == 404
+
+
+# -- Sheet ------------------------------------------------------------------
+
+class FakeSheet:
+    """In-memory stand-in for the Sheets helpers the export job calls."""
+
+    def __init__(self, monkeypatch, sheet_id="sheet-123"):
+        self.tables = {}
+        self.styles = []
+        monkeypatch.setattr(get_settings(), "community_star_sheet_id", sheet_id)
+        monkeypatch.setattr(export_job.sheets, "write_table", self.write_table)
+        monkeypatch.setattr(export_job.sheets, "read_table", lambda sid, tab: self.tables.get((sid, tab), []))
+        monkeypatch.setattr(export_job.sheets, "style_columns", lambda *a, **k: self.styles.append((a, k)))
+
+    def write_table(self, sid, tab, header, rows):
+        self.tables[(sid, tab)] = [list(header)] + [list(r) for r in rows]
+        return len(rows)
+
+    def rows(self, sid="sheet-123"):
+        header, *rows = self.tables[(sid, "Community Star")]
+        return [dict(zip(header, r)) for r in rows]
+
+    def edit(self, row_id, column, value, sid="sheet-123"):
+        table = self.tables[(sid, "Community Star")]
+        c = table[0].index(column)
+        for r in table[1:]:
+            if r[0] == row_id:
+                r[c] = value
+
+
+def test_sheet_rows(db, mail, window_open, monkeypatch):
+    sheet = FakeSheet(monkeypatch)
+    a = _one(db)
     assert export_job.export_community_star(db) == 1
-    assert written["sid"] == "sheet-123" and written["tab"] == "Community Star"
-    row = dict(zip(written["header"], written["rows"][0]))
+    row = sheet.rows()[0]
     assert row["Email"] == "jane.doe@example.com"
     assert row["Instagram"] == "@jane.doe"
     assert row["Application post"] == "https://www.instagram.com/reel/DQ1abcXYZ_-/"
+    assert row["Collab accepted"] is False and row["Stage"] == "Applied" and row["Notes"] == ""
     assert row["18+"] == "yes" and row["SMS opt-in"] == ""
     assert row["UTM"] == "utm_source=instagram"
+    assert "Partner opt-in" not in row
+    (args, kwargs), = sheet.styles
+    header = export_job.HEADER
+    assert kwargs["checkboxes"] == [header.index("Collab accepted")]
+    assert kwargs["dropdowns"][header.index("Stage")][0] == "Applied"
+    db.refresh(a)
+    assert a.sheet_seen == {"collab_accepted": "", "stage": "applied", "notes": ""}
+
+
+def test_sheet_edits_are_imported(db, mail, window_open, monkeypatch):
+    sheet = FakeSheet(monkeypatch)
+    a = _one(db)
+    export_job.export_community_star(db)
+    sheet.edit(a.id, "Collab accepted", True)
+    sheet.edit(a.id, "Stage", "Shortlist")
+    sheet.edit(a.id, "Notes", "Great reel")
+    export_job.export_community_star(db)
+    db.refresh(a)
+    assert a.collab_accepted is True and a.stage == "shortlist" and a.notes == "Great reel"
+    assert a.reviewed_by == "sheet"
+    row = sheet.rows()[0]
+    assert row["Collab accepted"] is True and row["Stage"] == "Shortlist" and row["Notes"] == "Great reel"
+
+
+def test_dashboard_edits_survive_the_sheet(db, mail, window_open, monkeypatch):
+    sheet = FakeSheet(monkeypatch)
+    a = _one(db)
+    export_job.export_community_star(db)
+    # staff change the row in the dashboard; the sheet still shows the old values
+    client.post(f"{URL}/{a.id}/update", headers=AUTH, json={"stage": "finalist", "notes": "From the dashboard"})
+    export_job.export_community_star(db)
+    db.refresh(a)
+    assert a.stage == "finalist" and a.notes == "From the dashboard"
+    assert sheet.rows()[0]["Stage"] == "Finalist"
+
+
+def test_sheet_ignores_unknown_stage_and_unchecked_text(db, mail, window_open, monkeypatch):
+    sheet = FakeSheet(monkeypatch)
+    a = _one(db)
+    export_job.export_community_star(db)
+    sheet.edit(a.id, "Stage", "Semifinal")
+    sheet.edit(a.id, "Collab accepted", "FALSE")
+    export_job.export_community_star(db)
+    db.refresh(a)
+    assert a.stage == "applied" and a.collab_accepted is False
+    assert sheet.rows()[0]["Stage"] == "Applied"
 
 
 def test_sheet_falls_back_to_applications_sheet(db, monkeypatch):
-    s = get_settings()
-    monkeypatch.setattr(s, "community_star_sheet_id", "")
-    monkeypatch.setattr(s, "applications_sheet_id", "apps-sheet")
-    seen = []
-    monkeypatch.setattr(export_job.sheets, "write_table", lambda sid, tab, header, rows: seen.append((sid, tab)) or 0)
+    sheet = FakeSheet(monkeypatch, sheet_id="")
+    monkeypatch.setattr(get_settings(), "applications_sheet_id", "apps-sheet")
     export_job.export_community_star(db)
-    assert seen == [("apps-sheet", "Community Star")]
+    assert list(sheet.tables) == [("apps-sheet", "Community Star")]

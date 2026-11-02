@@ -6,8 +6,14 @@ COMMUNITY_STAR_SHEET_ID, or to the athlete applications sheet
 application in a live sheet so the team can review them before picking the
 25 finalists.
 
-The sheet is a read-only mirror. Edits made in it are overwritten on the next
-run; the database is the system of record.
+Three TEAM columns are editable in the sheet (tinted header):
+  Collab accepted (checkbox), Stage (dropdown), Notes.
+Each run first reads the tab back and imports a team-column edit when the
+cell no longer matches what the last run wrote (sheet_seen on the row), so
+edits made in the sheet and in the dashboard's Community Star page both
+survive; when both change the same cell between two runs, the sheet wins.
+Every other column is a read-only mirror, overwritten on each run; the
+database is the system of record.
 
 Schedule: every 15 minutes.
 No-op (exit 0, one log line) until one of the sheet ids is set.
@@ -26,20 +32,25 @@ from backend.database import SessionLocal
 from backend.jobs.base import run_job
 from backend.models import CommunityStarApplication
 from backend.onboarding import sheets
-from backend.routers.community_star import SEASON
+from backend.routers.community_star import SEASON, STAGE_LABELS, STAGES, apply_review, parse_stage
 
 logger = logging.getLogger(__name__)
 
 TAB = "Community Star"
 
+# Team columns: header -> review field. Kept beside the entry so a reviewer
+# sees the post link and the decision together.
+TEAM = {"Collab accepted": "collab_accepted", "Stage": "stage", "Notes": "notes"}
+
 HEADER = [
-    "ID", "Applied (UTC)", "Full name", "Email", "Phone",
-    "School", "School state", "School from list", "Sport", "Class year",
-    "Instagram", "Application post", "Community", "What they're doing", "Organization",
+    "ID", "Applied (UTC)", "Full name", "School", "Sport", "Class year", "Community",
+    "Instagram", "Application post",
+    *TEAM,
+    "What they're doing", "Organization", "Email", "Phone", "School state", "School from list",
     "Collab invited", "Rules + eligible", "18+", "Privacy",
-    "Email opt-in", "SMS opt-in", "Partner opt-in", "Consent version",
-    "Confirmation sent", "UTM",
+    "Email opt-in", "SMS opt-in", "Consent version", "Confirmation sent", "UTM",
 ]
+_TRUE = {"true", "yes", "y", "x", "1", "✓", "✔"}
 
 
 def _d(dt: Optional[datetime]) -> str:
@@ -50,35 +61,91 @@ def _yes(v: Optional[bool]) -> str:
     return "yes" if v else ""
 
 
+def _team_value(a: CommunityStarApplication, field: str) -> Any:
+    """What the sheet cell shows for a team field."""
+    if field == "collab_accepted":
+        return bool(a.collab_accepted)
+    if field == "stage":
+        return STAGE_LABELS.get(a.stage, a.stage)
+    return a.notes or ""
+
+
+def _norm(field: str, value: Any) -> str:
+    """A team cell as a comparable string ('yes'/'' , stage key, text)."""
+    if field == "collab_accepted":
+        return "yes" if value is True or str(value).strip().lower() in _TRUE else ""
+    if field == "stage":
+        return parse_stage(value) or f"?{value}"
+    return str(value if value is not None else "").strip()
+
+
 def _row(a: CommunityStarApplication) -> list[Any]:
     utm = a.utm or {}
     return [
         a.id,
         _d(a.created_at),
         a.full_name,
-        a.email,
-        a.phone,
         a.school,
-        a.school_state or "",
-        _yes(a.school_matched),
         a.sport,
         a.class_year,
+        a.community,
         f"@{a.instagram}",
         a.post_url,
-        a.community,
+        *[_team_value(a, f) for f in TEAM.values()],
         a.work,
         a.organization or "",
+        a.email,
+        a.phone,
+        a.school_state or "",
+        _yes(a.school_matched),
         _yes(a.collab_invited),
         _yes(a.eligible_and_rules),
         _yes(a.confirm_age),
         _yes(a.consent_privacy),
         _yes(a.consent_email),
         _yes(a.consent_sms),
-        _yes(a.consent_partners),
         a.consent_version or "",
         _yes(a.confirmation_sent),
         ", ".join(f"{k}={v}" for k, v in utm.items()),
     ]
+
+
+def import_sheet_edits(db: Session, sheet_id: str, by_id: dict[int, CommunityStarApplication]) -> int:
+    """Apply team-column edits made in the sheet since the last run. Returns
+    the number of rows changed."""
+    table = sheets.read_table(sheet_id, TAB)
+    if not table:
+        return 0
+    header = [str(h).strip() for h in table[0]]
+    if "ID" not in header:
+        return 0
+    id_col = header.index("ID")
+    cols = {field: header.index(name) for name, field in TEAM.items() if name in header}
+    changed_rows = 0
+    for cells in table[1:]:
+        try:
+            a = by_id.get(int(cells[id_col]))
+        except (IndexError, TypeError, ValueError):
+            continue
+        if a is None or not a.sheet_seen:
+            continue   # not written by a previous run yet: nothing to compare
+        edits = {}
+        for field, c in cols.items():
+            cell = cells[c] if c < len(cells) else ""
+            now = _norm(field, cell)
+            if now != a.sheet_seen.get(field, now):
+                if field == "stage" and now.startswith("?"):
+                    logger.warning("community star sheet: row %s has unknown stage %r; ignored", a.id, cell)
+                    continue
+                edits[field] = (now == "yes") if field == "collab_accepted" else cell
+        if edits:
+            try:
+                apply_review(db, a, edits, by="sheet")
+                changed_rows += 1
+            except ValueError as e:
+                logger.warning("community star sheet: row %s edit ignored: %s", a.id, e)
+    db.commit()
+    return changed_rows
 
 
 def export_community_star(db: Session) -> int:
@@ -91,8 +158,20 @@ def export_community_star(db: Session) -> int:
             .filter(CommunityStarApplication.season == SEASON)
             .order_by(CommunityStarApplication.created_at.desc(), CommunityStarApplication.id.desc())
             .all())
+    imported = import_sheet_edits(db, sheet_id, {a.id: a for a in apps})
+
     n = sheets.write_table(sheet_id, TAB, HEADER, [_row(a) for a in apps])
-    logger.info("exported %d community star applications to sheet %s", n, sheet_id)
+    team_cols = [HEADER.index(name) for name in TEAM]
+    sheets.style_columns(
+        sheet_id, TAB, n,
+        checkboxes=[HEADER.index("Collab accepted")],
+        dropdowns={HEADER.index("Stage"): [STAGE_LABELS[k] for k in STAGES]},
+        highlight=team_cols)
+    for a in apps:
+        a.sheet_seen = {f: _norm(f, _team_value(a, f)) for f in TEAM.values()}
+    db.commit()
+    logger.info("exported %d community star applications to sheet %s (%d sheet edits imported)",
+                n, sheet_id, imported)
     return n
 
 
