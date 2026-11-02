@@ -28,7 +28,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, R
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.auth import require_api_key
+from backend.auth import actor_name, require_api_key
 from backend.config import get_settings
 from backend.database import SessionLocal, get_db
 from backend.models import CommunityStarApplication
@@ -248,6 +248,68 @@ async def submit_application(request: Request, background_tasks: BackgroundTasks
     return {"status": "ok", "id": app.id}
 
 
+# -- Review -----------------------------------------------------------------
+
+# applied -> shortlist -> finalist -> top5 -> winner, or disqualified (033).
+STAGES = ("applied", "shortlist", "finalist", "top5", "winner", "disqualified")
+STAGE_LABELS = {"applied": "Applied", "shortlist": "Shortlist", "finalist": "Finalist",
+                "top5": "Top 5", "winner": "Winner", "disqualified": "Disqualified"}
+# Review fields staff may change, with their length caps (None = boolean).
+REVIEW_FIELDS = {"collab_accepted": None, "stage": None, "notes": 2000,
+                 "photo_url": 500, "cause": 200, "youtube_id": 20}
+_YOUTUBE_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
+_YOUTUBE_URL = re.compile(r"(?:youtu\.be/|[?&]v=|/shorts/|/embed/|/live/)([A-Za-z0-9_-]{11})")
+
+
+def parse_stage(value) -> Optional[str]:
+    """'Top 5' / 'top5' / 'Finalists' -> a STAGES key; None when unknown."""
+    key = re.sub(r"[^a-z0-9]", "", str(value or "").lower())
+    key = {"": "applied", "shortlisted": "shortlist", "finalists": "finalist",
+           "winners": "winner", "dq": "disqualified"}.get(key, key)
+    return key if key in STAGES else None
+
+
+def parse_youtube(value) -> Optional[str]:
+    """A YouTube link or bare id -> the 11-character id; '' clears it."""
+    v = str(value or "").strip()
+    if not v:
+        return ""
+    if _YOUTUBE_ID.match(v):
+        return v
+    m = _YOUTUBE_URL.search(v)
+    return m.group(1) if m else None
+
+
+def apply_review(db: Session, a: CommunityStarApplication, fields: dict, by: str) -> list[str]:
+    """Set review fields on one row (dashboard and sheet import share this).
+    ValueError on a bad value; returns the names of the fields that changed."""
+    changed = []
+    for name, value in fields.items():
+        if name not in REVIEW_FIELDS:
+            raise ValueError(f"{name} is not a review field")
+        if name == "collab_accepted":
+            value = bool(value)
+        elif name == "stage":
+            stage = parse_stage(value)
+            if stage is None:
+                raise ValueError(f"stage must be one of {STAGES}")
+            value = stage
+        elif name == "youtube_id":
+            yid = parse_youtube(value)
+            if yid is None:
+                raise ValueError("youtube_id must be a YouTube link or video id")
+            value = yid or None
+        else:
+            value = (str(value).strip() if value is not None else "")[:REVIEW_FIELDS[name]] or None
+        if getattr(a, name) != value:
+            setattr(a, name, value)
+            changed.append(name)
+    if changed:
+        a.reviewed_at = datetime.now(tz=timezone.utc)
+        a.reviewed_by = by
+    return changed
+
+
 # -- Staff ------------------------------------------------------------------
 
 def row_out(a: CommunityStarApplication) -> dict:
@@ -260,6 +322,9 @@ def row_out(a: CommunityStarApplication) -> dict:
         "community": a.community, "work": a.work, "organization": a.organization,
         "consent_email": a.consent_email, "consent_sms": a.consent_sms, "consent_partners": a.consent_partners,
         "confirmation_sent": a.confirmation_sent, "utm": a.utm,
+        "collab_accepted": a.collab_accepted, "stage": a.stage, "notes": a.notes,
+        "photo_url": a.photo_url, "cause": a.cause, "youtube_id": a.youtube_id,
+        "reviewed_at": a.reviewed_at, "reviewed_by": a.reviewed_by,
     }
 
 
@@ -280,15 +345,44 @@ def list_applications(
     return [row_out(a) for a in rows]
 
 
+@router.post("/applications/{app_id}/update")
+async def update_application(app_id: int, request: Request, db: Session = Depends(get_db)):
+    """Staff review: any of collab_accepted, stage, notes, photo_url, cause,
+    youtube_id. POST because the CORS config only allows GET/POST."""
+    a = db.query(CommunityStarApplication).filter(CommunityStarApplication.id == app_id).first()
+    if a is None:
+        raise HTTPException(status_code=404, detail="application not found")
+    try:
+        body = await request.json()
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="invalid JSON")
+    if not isinstance(body, dict) or not body:
+        raise HTTPException(status_code=400, detail="expected an object of review fields")
+    try:
+        changed = apply_review(db, a, body, by=actor_name(request, "dashboard"))
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    db.commit()
+    db.refresh(a)
+    return {"changed": changed, "application": row_out(a)}
+
+
 @router.get("/summary")
 def summary(season: str = Query(SEASON), db: Session = Depends(get_db)):
-    rows = db.query(CommunityStarApplication.school, CommunityStarApplication.created_at).filter(
+    rows = db.query(CommunityStarApplication.school, CommunityStarApplication.created_at,
+                    CommunityStarApplication.stage, CommunityStarApplication.collab_accepted).filter(
         CommunityStarApplication.season == season).all()
     opens, closes = window()
+    by_stage = {s: 0 for s in STAGES}
+    for _, _, stage, _ in rows:
+        by_stage[stage] = by_stage.get(stage, 0) + 1
     return {
         "season": season,
         "total": len(rows),
-        "schools": len({s for s, _ in rows}),
-        "last_at": max((c for _, c in rows), default=None),
+        "schools": len({s for s, _, _, _ in rows}),
+        "collab_accepted": sum(1 for *_, c in rows if c),
+        "by_stage": by_stage,
+        "last_at": max((c for _, c, _, _ in rows), default=None),
         "window": {"opens": opens, "closes": closes, "open": is_open()},
     }

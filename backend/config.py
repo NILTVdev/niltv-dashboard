@@ -236,8 +236,9 @@ class Settings(BaseSettings):
     ses_configuration_set: str = "niltv-transactional"
     # Replies to the no-reply sender land here (Reply-To header). Empty = none.
     reply_to_email: str = "contact@niltv.com"
-    # Logo in the branded email header; empty = <site_base>/assets/img/niltv-logo-email.png
-    email_logo_url: str = ""
+    # Logo in the branded email header: the gold logo on the prod content CDN
+    # (objects there are immutable, so a new logo needs a new filename).
+    email_logo_url: str = "https://dr60jt51m7xh2.cloudfront.net/video/brand/email/niltv-email-gold@2x.png"
     # Staff told about each new applicant: one address or a comma-separated
     # list (one email addressed to all of them). Empty = no notification.
     applications_notify_email: str = ""

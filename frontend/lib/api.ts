@@ -123,3 +123,12 @@ export const getApplications = (status = "all") =>
   apiFetchFresh<Application[]>(`/api/applications/?status=${encodeURIComponent(status)}`);
 export const getApplicationsSummary = () =>
   apiFetchFresh<ApplicationsSummary>("/api/applications/summary");
+
+// ── Community Star (applications + review) ────────────────────────────────────
+
+import type { CommunityStarApplication, CommunityStarSummary } from "./types";
+
+export const getCommunityStarApplications = () =>
+  apiFetchFresh<CommunityStarApplication[]>("/api/community-star/applications?limit=5000");
+export const getCommunityStarSummary = () =>
+  apiFetchFresh<CommunityStarSummary>("/api/community-star/summary");

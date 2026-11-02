@@ -26,8 +26,7 @@ _LOGO_W = 150
 
 
 def _logo_url() -> str:
-    s = get_settings()
-    return s.email_logo_url or f"{s.site_base.rstrip('/')}/assets/img/niltv-logo-email.png"
+    return get_settings().email_logo_url
 
 
 def _layout(inner: str, preheader: str = "") -> str:

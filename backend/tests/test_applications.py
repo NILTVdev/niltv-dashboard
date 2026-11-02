@@ -433,7 +433,7 @@ def test_lowercase_names_are_capitalised():
 
 def test_email_layout_is_branded(secrets):
     out = mailer._layout("<p>Hi <b>x</b></p>", preheader="A <b>pre</b>")
-    assert "niltv-logo-email.png" in out and 'alt="NIL TV"' in out
+    assert "niltv-email-gold@2x.png" in out and 'alt="NIL TV"' in out
     assert "<p>Hi <b>x</b></p>" in out                      # body html passes through
     assert "A &lt;b&gt;pre&lt;/b&gt;" in out                # preheader is escaped
     assert "/contact/" in out

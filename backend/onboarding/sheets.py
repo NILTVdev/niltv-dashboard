@@ -107,6 +107,61 @@ def write_table(spreadsheet_id: str, tab: str, header: list[str], rows: list[lis
     return len(rows)
 
 
+def read_table(spreadsheet_id: str, tab: str) -> list[list[Any]]:
+    """Every row of the tab as raw values (checkboxes come back as booleans).
+    [] when the tab does not exist yet."""
+    svc = client()
+    try:
+        if _sheet_id(svc, spreadsheet_id, tab) is None:
+            return []
+        res = svc.spreadsheets().values().get(
+            spreadsheetId=spreadsheet_id, range=f"'{tab}'",
+            valueRenderOption="UNFORMATTED_VALUE").execute()
+    except Exception as e:  # noqa: BLE001
+        raise _explain(e, spreadsheet_id) from e
+    return res.get("values", [])
+
+
+def style_columns(spreadsheet_id: str, tab: str, rows: int, checkboxes: list[int] = (),
+                  dropdowns: Optional[dict[int, list[str]]] = None, highlight: list[int] = ()) -> None:
+    """Best-effort column rules on rows 2..rows+1 (0-based column indexes):
+    checkbox cells, dropdown lists, and a tinted header for the columns staff
+    edit. Clears the rules on every other cell of those columns first."""
+    svc = client()
+    try:
+        sheet_id = _sheet_id(svc, spreadsheet_id, tab)
+        if sheet_id is None:
+            return
+        body = []
+
+        def col_range(c: int, start: int = 1, end: Optional[int] = None) -> dict:
+            r = {"sheetId": sheet_id, "startRowIndex": start, "startColumnIndex": c, "endColumnIndex": c + 1}
+            if end is not None:
+                r["endRowIndex"] = end
+            return r
+
+        for c in list(checkboxes) + list((dropdowns or {}).keys()):
+            body.append({"setDataValidation": {"range": col_range(c)}})   # no rule = clear
+        if rows:
+            for c in checkboxes:
+                body.append({"setDataValidation": {"range": col_range(c, 1, rows + 1),
+                                                   "rule": {"condition": {"type": "BOOLEAN"}}}})
+            for c, values in (dropdowns or {}).items():
+                body.append({"setDataValidation": {"range": col_range(c, 1, rows + 1), "rule": {
+                    "condition": {"type": "ONE_OF_LIST", "values": [{"userEnteredValue": v} for v in values]},
+                    "strict": True, "showCustomUi": True}}})
+        for c in highlight:
+            body.append({"repeatCell": {
+                "range": col_range(c, 0, 1),
+                "cell": {"userEnteredFormat": {"backgroundColor": {"red": 1, "green": 0.95, "blue": 0.8},
+                                               "textFormat": {"bold": True}}},
+                "fields": "userEnteredFormat.backgroundColor,userEnteredFormat.textFormat.bold"}})
+        if body:
+            svc.spreadsheets().batchUpdate(spreadsheetId=spreadsheet_id, body={"requests": body}).execute()
+    except Exception as e:  # noqa: BLE001 - formatting must never fail the export
+        log.warning("sheets: column rules skipped on %s/%s: %s", spreadsheet_id, tab, e)
+
+
 def _sheet_id(svc, spreadsheet_id: str, title: str) -> Optional[int]:
     meta = svc.spreadsheets().get(spreadsheetId=spreadsheet_id, fields="sheets.properties").execute()
     for sh in meta.get("sheets", []):
