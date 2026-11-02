@@ -111,6 +111,14 @@ def test_one_application_per_email(db, mail, window_open):
     assert db.query(CommunityStarApplication).one().full_name == "Jane Doe"
 
 
+def test_one_application_per_instagram_account(db, mail, window_open):
+    assert client.post(URL, json=FORM).status_code == 200
+    r = client.post(URL, json=dict(FORM, email="jane.other@example.com", instagram="jane.doe"))
+    assert r.status_code == 409
+    assert "Instagram" in r.json()["detail"]
+    assert db.query(CommunityStarApplication).count() == 1
+
+
 def test_closed_outside_the_window(db, mail, monkeypatch):
     s = get_settings()
     monkeypatch.setattr(s, "community_star_opens", "2026-11-02T14:00:00+00:00")
@@ -155,8 +163,8 @@ def test_validation(db, mail, window_open, change, message):
 
 def test_rate_limit_per_ip(db, mail, window_open):
     for i in range(cs._RATE_LIMIT):
-        assert client.post(URL, json=dict(FORM, email=f"a{i}@example.com")).status_code == 200
-    r = client.post(URL, json=dict(FORM, email="late@example.com"))
+        assert client.post(URL, json=dict(FORM, email=f"a{i}@example.com", instagram=f"a{i}")).status_code == 200
+    r = client.post(URL, json=dict(FORM, email="late@example.com", instagram="late"))
     assert r.status_code == 429
 
 

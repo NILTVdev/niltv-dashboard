@@ -7,10 +7,11 @@ Two routers on the same prefix (/api/community-star):
 * ``router`` - X-API-Key like every other dashboard route. List + counts for
   staff; the staff sheet (jobs.export_community_star_sheet) is the main view.
 
-Rules from the application form spec (Oct 8): one application per email,
-the post link only accepts instagram.com, the form only takes entries between
-the open and close times. The confirmation email repeats the confirmation
-screen.
+Rules from the application form spec and the official rules: one application
+per person (per email, and per Instagram account), the post link only accepts
+instagram.com, the form only takes entries between the open and close times
+(the server clock is the official clock). The confirmation email repeats the
+confirmation screen.
 """
 
 from __future__ import annotations
@@ -226,6 +227,12 @@ async def submit_application(request: Request, background_tasks: BackgroundTasks
             CommunityStarApplication.season == SEASON,
             CommunityStarApplication.email == row["email"]).first():
         raise HTTPException(status_code=409, detail="this email already has an application")
+    # Official rules: one application per person. A second email with the
+    # same Instagram account is the same person.
+    if db.query(CommunityStarApplication.id).filter(
+            CommunityStarApplication.season == SEASON,
+            CommunityStarApplication.instagram == row["instagram"]).first():
+        raise HTTPException(status_code=409, detail="this Instagram account already has an application")
 
     raw_answers = {k: v for k, v in payload.items() if k not in _HONEYPOT_FIELDS}
     app = CommunityStarApplication(season=SEASON, source="communitystar", ip=ip, answers=raw_answers, **row)
