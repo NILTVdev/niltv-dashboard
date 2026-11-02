@@ -48,7 +48,7 @@ HEADER = [
     *TEAM,
     "What they're doing", "Organization", "Email", "Phone", "School state", "School from list",
     "Collab invited", "Rules + eligible", "18+", "Privacy",
-    "Email opt-in", "SMS opt-in", "Consent version", "Confirmation sent", "UTM",
+    "Email opt-in", "SMS opt-in", "Consent version", "Confirmation sent", "UTM", "Dashboard",
 ]
 _TRUE = {"true", "yes", "y", "x", "1", "✓", "✔"}
 
@@ -107,6 +107,7 @@ def _row(a: CommunityStarApplication) -> list[Any]:
         a.consent_version or "",
         _yes(a.confirmation_sent),
         ", ".join(f"{k}={v}" for k, v in utm.items()),
+        f"{get_settings().dashboard_base_url.rstrip('/')}/community-star?id={a.id}",
     ]
 
 

@@ -261,6 +261,7 @@ def test_sheet_rows(db, mail, window_open, monkeypatch):
     assert row["18+"] == "yes" and row["SMS opt-in"] == ""
     assert row["UTM"] == "utm_source=instagram"
     assert "Partner opt-in" not in row
+    assert row["Dashboard"].endswith(f"/community-star?id={a.id}")
     (args, kwargs), = sheet.styles
     header = export_job.HEADER
     assert kwargs["checkboxes"] == [header.index("Collab accepted")]
