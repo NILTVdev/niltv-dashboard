@@ -251,6 +251,15 @@ class Settings(BaseSettings):
     # once. Empty = no account check.
     cognito_user_pools: str = ""
 
+    # ── Community Star (community_star router) ──────────────────────────
+    # The application window, UTC ISO times: opens Mon Nov 2 9:00am ET,
+    # closes after Mon Nov 23 11:59pm PT. Posts outside it get 410.
+    community_star_opens: str = "2026-11-02T14:00:00+00:00"
+    community_star_closes: str = "2026-11-24T08:00:00+00:00"
+    # Staff sheet for the applications mirror (export job). Empty = the
+    # athlete applications sheet (applications_sheet_id), on its own tab.
+    community_star_sheet_id: str = ""
+
     # DocuSign eSignature — JWT grant (integration key + RSA private key, one
     # consented user). Empty integration key = DocuSign disabled: approve
     # still works and falls back to emailing docusign_powerform_url if set.

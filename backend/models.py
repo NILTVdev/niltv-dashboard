@@ -1,6 +1,6 @@
 from sqlalchemy import (
     Column, Index, Integer, Text, Boolean, Numeric, BigInteger,
-    TIMESTAMP, ForeignKey, JSON,
+    TIMESTAMP, ForeignKey, JSON, UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -630,6 +630,58 @@ class Application(Base):
         # completion time, which can predate the webhook that recorded it.
         order_by="ApplicationEvent.id",
     )
+
+
+class CommunityStarApplication(Base):
+    """An application to the Community Star grant program (migration 032).
+
+    One row per email per season, posted by niltv.com/communitystar. Not an
+    athlete onboarding row: no review pipeline here, the staff sheet is the
+    working view. Personal data stays in this table and that sheet.
+    """
+    __tablename__ = "community_star_applications"
+    __table_args__ = (
+        UniqueConstraint("season", "email", name="uq_community_star_season_email"),
+        Index("idx_community_star_created", "season", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    season = Column(Text, nullable=False, server_default="2026")
+
+    email = Column(Text, nullable=False)
+    full_name = Column(Text, nullable=False)
+    phone = Column(Text, nullable=False)
+
+    school = Column(Text, nullable=False)
+    school_state = Column(Text)
+    school_domain = Column(Text)
+    school_matched = Column(Boolean, nullable=False, server_default="false")
+    sport = Column(Text, nullable=False)
+    class_year = Column(Text, nullable=False)
+
+    instagram = Column(Text, nullable=False)
+    post_url = Column(Text, nullable=False)
+    community = Column(Text, nullable=False)
+    work = Column(Text, nullable=False)
+    organization = Column(Text)
+
+    collab_invited = Column(Boolean, nullable=False, server_default="false")
+    eligible_and_rules = Column(Boolean, nullable=False, server_default="false")
+    confirm_age = Column(Boolean, nullable=False, server_default="false")
+    consent_privacy = Column(Boolean, nullable=False, server_default="false")
+
+    consent_email = Column(Boolean, nullable=False, server_default="false")
+    consent_sms = Column(Boolean, nullable=False, server_default="false")
+    consent_partners = Column(Boolean, nullable=False, server_default="false")
+    consent_version = Column(Text)
+
+    source = Column(Text, nullable=False, server_default="communitystar")
+    utm = Column(JSON)
+    answers = Column(JSON)
+    user_agent = Column(Text)
+    ip = Column(Text)
+    confirmation_sent = Column(Boolean, nullable=False, server_default="false")
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
 
 
 class DashboardUser(Base):
