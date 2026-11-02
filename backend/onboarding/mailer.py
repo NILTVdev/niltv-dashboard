@@ -153,6 +153,28 @@ def send_application_received(to: str, first_name: str) -> bool:
     return _send(to, subject, text, body, preheader="We have your application. We will be in touch shortly with our decision.")
 
 
+def send_community_star_received(to: str, first_name: str) -> bool:
+    """Community Star confirmation. Same message as the form's confirmation
+    screen (application form spec, Oct 8)."""
+    name = first_name or "there"
+    site = get_settings().site_base.rstrip("/")
+    subject = "You're in for NIL TV Community Star"
+    text = (
+        f"Hi {name},\n\nYou're in! Make sure @NILTV and @NILSTAR accepted your collab invite. "
+        "Finalists are announced Nov 25.\n\n"
+        f"Follow along at {site}/communitystar/\n\nNIL TV\n"
+    )
+    body = (
+        f'<p style="margin:0 0 14px">Hi {html.escape(name)},</p>'
+        '<p style="margin:0 0 14px;font-weight:700">You&rsquo;re in!</p>'
+        '<p style="margin:0 0 18px">Make sure <b>@NILTV</b> and <b>@NILSTAR</b> accepted your collab '
+        "invite. Finalists are announced Nov 25.</p>"
+        f'<p style="margin:0 0 22px"><a href="{site}/communitystar/" style="{_BTN}">Follow along</a></p>'
+        f'<p style="{_MUTED};margin:0">NIL TV</p>'
+    )
+    return _send(to, subject, text, body, preheader="Make sure @NILTV and @NILSTAR accepted your collab invite.")
+
+
 def send_declined(to: str, first_name: str) -> bool:
     name = first_name or "there"
     subject = "Your NIL TV application"
