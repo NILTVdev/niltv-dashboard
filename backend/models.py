@@ -683,6 +683,17 @@ class CommunityStarApplication(Base):
     confirmation_sent = Column(Boolean, nullable=False, server_default="false")
     created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
 
+    # Review state (migration 033): dashboard page + the sheet's team columns.
+    collab_accepted = Column(Boolean, nullable=False, server_default="false")
+    stage = Column(Text, nullable=False, server_default="applied")
+    notes = Column(Text)
+    photo_url = Column(Text)
+    cause = Column(Text)
+    youtube_id = Column(Text)
+    reviewed_at = Column(TIMESTAMP(timezone=True))
+    reviewed_by = Column(Text)
+    sheet_seen = Column(JSON)
+
 
 class DashboardUser(Base):
     """A dashboard login (migration 030). Roles: admin | general | demo."""
