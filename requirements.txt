@@ -27,6 +27,10 @@ google-auth-httplib2==0.4.2
 # DocuSign JWT grant (RS256) for athlete onboarding
 PyJWT[crypto]==2.15.1
 
+# Community Star: finalist card photos, voter email domain checks
+pillow==13.0.0
+dnspython==2.9.2
+
 # Settings
 pydantic-settings==2.15.0
 python-dotenv==1.2.3

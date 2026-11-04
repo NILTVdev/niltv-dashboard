@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session
 from backend.auth import actor_name, require_api_key
 from backend.config import get_settings
 from backend.database import SessionLocal, get_db
-from backend.models import CommunityStarApplication
+from backend.models import CommunityStarApplication, CommunityStarProgram
 from backend.onboarding import cognito, mailer
 from backend.routers.applications import _client_ip
 
@@ -103,6 +103,16 @@ def _rate_limited(ip: str, now: Optional[float] = None) -> bool:
 def window() -> tuple[datetime, datetime]:
     s = get_settings()
     return datetime.fromisoformat(s.community_star_opens), datetime.fromisoformat(s.community_star_closes)
+
+
+def official_now(db: Session) -> datetime:
+    """The official clock (rule 4): the server clock. Off production, staff can
+    set a rehearsal time (dev_now); production never reads it."""
+    now = datetime.now(tz=timezone.utc)
+    if get_settings().is_production:
+        return now
+    dev_now = db.query(CommunityStarProgram.dev_now).filter(CommunityStarProgram.season == SEASON).scalar()
+    return dev_now or now
 
 
 def is_open(now: Optional[datetime] = None) -> bool:
@@ -211,7 +221,7 @@ async def submit_application(request: Request, background_tasks: BackgroundTasks
     if any(str(payload.get(f) or "").strip() for f in _HONEYPOT_FIELDS):
         return {"status": "ok"}
 
-    if not is_open():
+    if not is_open(official_now(db)):
         raise HTTPException(status_code=410, detail="applications are closed")
 
     ip = _client_ip(request)
@@ -287,7 +297,8 @@ STAGE_LABELS = {"applied": "Applied", "shortlist": "Shortlist", "finalist": "Fin
                 "top5": "Top 5", "winner": "Winner", "disqualified": "Disqualified"}
 # Review fields staff may change, with their length caps (None = boolean).
 REVIEW_FIELDS = {"collab_accepted": None, "stage": None, "notes": 2000,
-                 "photo_url": 500, "cause": 200, "youtube_id": 20}
+                 "photo_url": 500, "cause": 200, "youtube_id": 20,
+                 "card_name": 120, "card_school": 160, "card_sport": 80, "card_community": 160}
 _YOUTUBE_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
 _YOUTUBE_URL = re.compile(r"(?:youtu\.be/|[?&]v=|/shorts/|/embed/|/live/)([A-Za-z0-9_-]{11})")
 
@@ -355,6 +366,8 @@ def row_out(a: CommunityStarApplication) -> dict:
         "confirmation_sent": a.confirmation_sent, "utm": a.utm,
         "collab_accepted": a.collab_accepted, "stage": a.stage, "notes": a.notes,
         "photo_url": a.photo_url, "cause": a.cause, "youtube_id": a.youtube_id,
+        "card_name": a.card_name, "card_school": a.card_school,
+        "card_sport": a.card_sport, "card_community": a.card_community,
         "reviewed_at": a.reviewed_at, "reviewed_by": a.reviewed_by,
     }
 

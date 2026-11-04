@@ -1,15 +1,29 @@
+from contextlib import asynccontextmanager
+
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.auth import require_api_key
 from backend.config import get_settings
+from backend.onboarding import vote_outbox
 
-from backend.routers import athletes, snapshots, posts, zoomph, web_analytics, trueblue, reports, brand, ambassadors, network_screen, campus_channels, applications, community_star, users
+from backend.routers import athletes, snapshots, posts, zoomph, web_analytics, trueblue, reports, brand, ambassadors, network_screen, campus_channels, applications, community_star, community_star_voting, users
 
 # The interactive docs and OpenAPI schema expose the full route map and auth
 # model, so they are served outside production only.
 _public_docs = get_settings().environment != "production"
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    # Community Star vote mail. Dev has no crontab, so this lives with the app.
+    vote_outbox.start()
+    yield
+    vote_outbox.stop()
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="NILTV Dashboard API",
     version="1.0.0",
     docs_url="/docs" if _public_docs else None,
@@ -55,6 +69,8 @@ app.include_router(applications.router, prefix="/api/applications", tags=["appli
 # The niltv.com/communitystar form posts here (public), staff read it (key).
 app.include_router(community_star.public_router, prefix="/api/community-star", tags=["community-star"])
 app.include_router(community_star.router, prefix="/api/community-star", tags=["community-star"])
+app.include_router(community_star_voting.public_router, prefix="/api/community-star", tags=["community-star"])
+app.include_router(community_star_voting.router, prefix="/api/community-star", tags=["community-star"])
 app.include_router(users.auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 

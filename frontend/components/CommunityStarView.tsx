@@ -1,13 +1,25 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, ChevronDown, ChevronUp, ExternalLink, Search } from "lucide-react";
+import { ChevronDown, ChevronUp, ExternalLink, Search } from "lucide-react";
 import { cn, fmtDate } from "@/lib/utils";
-import type { CommunityStarApplication, CommunityStarStage, CommunityStarSummary } from "@/lib/types";
+import type {
+  CommunityStarApplication,
+  CommunityStarProgram as Program,
+  CommunityStarStage,
+  CommunityStarSummary,
+  CommunityStarVoteSummary,
+} from "@/lib/types";
+import CommunityStarCardEditor from "./CommunityStarCardEditor";
+import CommunityStarProgram from "./CommunityStarProgram";
+import { Banner, Btn, Chip, PanelTitle } from "./CommunityStarUi";
+import CommunityStarVotes from "./CommunityStarVotes";
 
 interface Props {
   initial: CommunityStarApplication[];
   summary: CommunityStarSummary | null;
+  program: Program | null;
+  votes: CommunityStarVoteSummary | null;
 }
 
 type Row = CommunityStarApplication;
@@ -35,6 +47,13 @@ const STAGE_STYLE: Record<CommunityStarStage, string> = {
 // Rows that show a finalist card on niltv.com/communitystar.
 const CARD_STAGES: CommunityStarStage[] = ["finalist", "top5", "winner"];
 const FINALIST_TARGET = 25;
+
+const SECTIONS = [
+  { key: "applications", label: "Applications" },
+  { key: "program", label: "Program" },
+  { key: "votes", label: "Votes" },
+] as const;
+type Section = (typeof SECTIONS)[number]["key"];
 
 // "collab" = entries still waiting on the collab invite (the rules count an
 // entry once @NILTV and @NILSTAR accept it).
@@ -74,8 +93,10 @@ async function save(id: number, fields: Partial<Row>): Promise<Row> {
   return data.application as Row;
 }
 
-export default function CommunityStarView({ initial, summary }: Props) {
+export default function CommunityStarView({ initial, summary, program: initialProgram, votes }: Props) {
   const [rows, setRows] = useState<Row[]>(initial);
+  const [program, setProgram] = useState(initialProgram);
+  const [section, setSection] = useState<Section>("applications");
   const [filter, setFilter] = useState("all");
   const [school, setSchool] = useState("all");
   const [sport, setSport] = useState("all");
@@ -128,6 +149,7 @@ export default function CommunityStarView({ initial, summary }: Props) {
 
   const finalists = rows.filter((r) => CARD_STAGES.includes(r.stage)).length;
   const win = summary?.window;
+  const published = Boolean(program?.finalists_published_at);
 
   return (
     <div>
@@ -135,8 +157,10 @@ export default function CommunityStarView({ initial, summary }: Props) {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Community Star</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Applications for the two $5,000 grants. Review here or in the staff sheet&rsquo;s team columns; the two
-            sync every 15 minutes.
+            Applications for the two $5,000 grants.{" "}
+            {published
+              ? <>Finalists are published, so stage changes happen here only. The staff sheet shows them.</>
+              : <>Review here or in the staff sheet&rsquo;s team columns; the two sync every 15 minutes.</>}
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-xs">
@@ -152,6 +176,35 @@ export default function CommunityStarView({ initial, summary }: Props) {
         </div>
       </div>
 
+      <div className="mb-4 flex gap-5 border-b text-sm font-semibold">
+        {SECTIONS.map((s) => (
+          <button
+            key={s.key}
+            type="button"
+            onClick={() => setSection(s.key)}
+            className={cn(
+              "-mb-px border-b-2 pb-2 transition-colors",
+              section === s.key ? "border-[var(--brand)] text-[var(--brand)]" : "border-transparent text-gray-500 hover:text-gray-900",
+            )}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      {section === "program" && (
+        <CommunityStarProgram
+          program={program}
+          marked={{
+            finalists,
+            top5: rows.filter((r) => r.stage === "top5" || r.stage === "winner").length,
+            winners: rows.filter((r) => r.stage === "winner").length,
+          }}
+          onProgram={setProgram}
+        />
+      )}
+      {section === "votes" && <CommunityStarVotes initial={votes} />}
+      {section === "applications" && (<>
       <div className="mb-2 flex flex-wrap gap-1 rounded-lg bg-gray-100 p-1 w-fit max-w-full max-sm:flex-nowrap max-sm:overflow-x-auto max-sm:[scrollbar-width:none] max-sm:[&::-webkit-scrollbar]:hidden">
         {FILTERS.map((f) => (
           <button
@@ -187,9 +240,7 @@ export default function CommunityStarView({ initial, summary }: Props) {
         </label>
       </div>
 
-      {error && (
-        <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div>
-      )}
+      {error && <Banner>{error}</Banner>}
 
       <div className="overflow-x-auto rounded-xl border bg-white shadow-sm">
         <table className="w-full text-sm max-sm:block">
@@ -257,7 +308,13 @@ export default function CommunityStarView({ initial, summary }: Props) {
                   {open && (
                     <tr className="bg-[var(--brand-pale)]/30 max-sm:block">
                       <td colSpan={8} className="px-6 py-4 max-sm:block max-sm:px-4">
-                        <Detail row={r} busy={busy === r.id} onSave={(fields) => update(r.id, fields)} />
+                        <Detail
+                          row={r}
+                          busy={busy === r.id}
+                          live={published}
+                          onSave={(fields) => update(r.id, fields)}
+                          onUploaded={(next) => setRows((prev) => prev.map((x) => (x.id === next.id ? next : x)))}
+                        />
                       </td>
                     </tr>
                   )}
@@ -267,6 +324,7 @@ export default function CommunityStarView({ initial, summary }: Props) {
           </tbody>
         </table>
       </div>
+      </>)}
     </div>
   );
 }
@@ -291,15 +349,17 @@ function StageSelect({ value, disabled, onChange }: {
   );
 }
 
-function Detail({ row, busy, onSave }: { row: Row; busy: boolean; onSave: (fields: Partial<Row>) => void }) {
-  // Drafts start from the saved values; after Save the row comes back with
-  // the same values, so no sync effect is needed.
+function Detail({ row, busy, live, onSave, onUploaded }: {
+  row: Row;
+  busy: boolean;
+  live: boolean;
+  onSave: (fields: Partial<Row>) => void;
+  onUploaded: (row: Row) => void;
+}) {
+  // The draft starts from the saved value; after Save the row comes back with
+  // the same value, so no sync effect is needed.
   const [notes, setNotes] = useState(row.notes ?? "");
-  const [photo, setPhoto] = useState(row.photo_url ?? "");
-  const [cause, setCause] = useState(row.cause ?? "");
-  const [video, setVideo] = useState(row.youtube_id ?? "");
   const card = CARD_STAGES.includes(row.stage);
-  const cardDirty = photo !== (row.photo_url ?? "") || cause !== (row.cause ?? "") || video !== (row.youtube_id ?? "");
   const consents: [string, boolean][] = [
     ["Collab invited", true],
     ["Rules + eligible", true],
@@ -312,7 +372,7 @@ function Detail({ row, busy, onSave }: { row: Row; busy: boolean; onSave: (field
   return (
     <div className="grid gap-6 lg:grid-cols-3">
       <section className="lg:col-span-1">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Application</h3>
+        <PanelTitle>Application</PanelTitle>
         <p className="text-sm whitespace-pre-wrap">{row.work}</p>
         <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
           <Dt>Community</Dt><Dd>{row.community}</Dd>
@@ -336,7 +396,7 @@ function Detail({ row, busy, onSave }: { row: Row; busy: boolean; onSave: (field
       </section>
 
       <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Review</h3>
+        <PanelTitle>Review</PanelTitle>
         <div className="flex flex-wrap items-center gap-3">
           <StageSelect value={row.stage} disabled={busy} onChange={(stage) => onSave({ stage })} />
           <label className="inline-flex items-center gap-1.5 text-sm">
@@ -361,94 +421,12 @@ function Detail({ row, busy, onSave }: { row: Row; busy: boolean; onSave: (field
       </section>
 
       <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Finalist card</h3>
-        {!card ? (
-          <p className="text-sm text-gray-400">Set the stage to Finalist to fill in the card shown on niltv.com/communitystar.</p>
-        ) : (
-          <>
-            <div className="space-y-2">
-              <Field label="Photo link" hint="Square or portrait image URL">
-                <input value={photo} onChange={(e) => setPhoto(e.target.value)} className="h-8 w-full rounded-md border px-2 text-sm bg-white" placeholder="https://..." />
-              </Field>
-              <Field label="Cause" hint={`One line, ${cause.length}/200`}>
-                <input value={cause} maxLength={200} onChange={(e) => setCause(e.target.value)} className="h-8 w-full rounded-md border px-2 text-sm bg-white" placeholder="Reading hour for Durham kids" />
-              </Field>
-              <Field label="Round 2 video" hint="YouTube link (posts Dec 10)">
-                <input value={video} onChange={(e) => setVideo(e.target.value)} className="h-8 w-full rounded-md border px-2 text-sm bg-white" placeholder="https://youtu.be/..." />
-              </Field>
-            </div>
-            <div className="mt-2 text-right">
-              <Btn tone="primary" disabled={busy || !cardDirty}
-                   onClick={() => onSave({ photo_url: photo, cause, youtube_id: video })}>
-                <Check className="h-3.5 w-3.5" /> Save card
-              </Btn>
-            </div>
-            <CardPreview row={row} photo={photo} cause={cause} />
-          </>
-        )}
+        <PanelTitle>Finalist card</PanelTitle>
+        {card
+          ? <CommunityStarCardEditor row={row} busy={busy} live={live} onSave={onSave} onUploaded={onUploaded} />
+          : <p className="text-sm text-gray-400">Set the stage to Finalist to fill in the card shown on niltv.com/communitystar.</p>}
       </section>
     </div>
-  );
-}
-
-// Roughly the finalist card on niltv.com/communitystar (dark, gold accents).
-function CardPreview({ row, photo, cause }: { row: Row; photo: string; cause: string }) {
-  return (
-    <div className="mt-3 rounded-xl border border-[#836C42] bg-[#0b0b0f] p-3 text-white">
-      <div className="flex gap-3">
-        <div className="h-16 w-14 shrink-0 overflow-hidden rounded-md bg-[#17171c] text-[10px] text-gray-500 flex items-center justify-center">
-          {photo
-            // eslint-disable-next-line @next/next/no-img-element
-            ? <img src={photo} alt="" className="h-full w-full object-cover" />
-            : "Photo"}
-        </div>
-        <div className="min-w-0">
-          <div className="font-bold uppercase tracking-wide text-[15px] leading-tight">{row.full_name}</div>
-          <div className="text-[11px] text-[#E8BD6E]">{row.school} &middot; {row.sport}</div>
-          <div className="text-[11px] text-gray-400">{row.community}</div>
-        </div>
-      </div>
-      <p className="mt-2 text-xs text-gray-300">{cause || <span className="text-gray-600">Cause line</span>}</p>
-    </div>
-  );
-}
-
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <label className="block">
-      <span className="flex justify-between text-xs text-gray-500"><span>{label}</span>{hint && <span className="text-gray-400">{hint}</span>}</span>
-      {children}
-    </label>
-  );
-}
-
-function Chip({ children, tone = "default" }: { children: React.ReactNode; tone?: "default" | "ok" | "warn" }) {
-  return (
-    <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 ring-1",
-      tone === "default" && "bg-white text-gray-700 ring-gray-200",
-      tone === "ok" && "bg-emerald-50 text-emerald-800 ring-emerald-200",
-      tone === "warn" && "bg-amber-50 text-amber-800 ring-amber-200")}>
-      {children}
-    </span>
-  );
-}
-
-function Btn({ children, onClick, disabled, tone = "default", title }: {
-  children: React.ReactNode; onClick: () => void; disabled?: boolean; tone?: "default" | "primary"; title?: string;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      title={title}
-      className={cn(
-        "inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors disabled:opacity-50 max-sm:px-3 max-sm:py-2 max-sm:text-sm",
-        tone === "primary" && "bg-[var(--brand)] text-white hover:opacity-90",
-        tone === "default" && "border text-gray-700 hover:bg-gray-50",
-      )}
-    >
-      {children}
-    </button>
   );
 }
 

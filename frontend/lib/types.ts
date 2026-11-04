@@ -641,6 +641,10 @@ export interface CommunityStarApplication {
   photo_url: string | null;
   cause: string | null;
   youtube_id: string | null;
+  card_name: string | null;
+  card_school: string | null;
+  card_sport: string | null;
+  card_community: string | null;
   reviewed_at: string | null;
   reviewed_by: string | null;
 }
@@ -653,4 +657,93 @@ export interface CommunityStarSummary {
   by_stage: Record<CommunityStarStage, number>;
   last_at: string | null;
   window: { opens: string; closes: string; open: boolean };
+}
+
+export type CommunityStarPhase = "coming" | "open" | "closed" | "finalists" | "voting" | "top5" | "winners";
+export type CommunityStarPublishable = "finalists" | "top5" | "winners";
+
+export interface CommunityStarSettings {
+  confirm_grace_minutes: number;
+  allow_pending_change: boolean;
+  leaderboard_visible: boolean;
+  board_min_votes: number;
+  card_order: "alphabetical" | "shuffled";
+  voting_paused: boolean;
+}
+
+export interface CommunityStarReadiness {
+  key: string;
+  label: string;
+  ok: boolean;
+  detail?: string | null;
+}
+
+export interface CommunityStarProgram {
+  season: string;
+  stage: CommunityStarPhase;
+  server_time: string;
+  production: boolean;
+  times: { opens: string; closes: string; finalists: string; vote_opens: string; vote_closes: string };
+  finalists_published_at: string | null;
+  top5_published_at: string | null;
+  winners_published_at: string | null;
+  published_by: string | null;
+  frozen_at: string | null;
+  dev_now: string | null;
+  settings: CommunityStarSettings;
+  counts: {
+    finalists: number;
+    top5: number;
+    winners: number;
+    missing_photo: number;
+    missing_cause: number;
+    missing_youtube: number;
+  };
+  readiness: CommunityStarReadiness[];
+}
+
+export type CommunityStarVoteStatus = "pending" | "confirmed" | "void";
+export type CommunityStarMailStatus = "queued" | "sent" | "failed";
+
+export interface CommunityStarVote {
+  id: number;
+  finalist_id: number;
+  finalist_name: string;
+  email: string;
+  status: CommunityStarVoteStatus;
+  void_reason: string | null;
+  voided_by: string | null;
+  voided_at: string | null;
+  restored_by: string | null;
+  restored_at: string | null;
+  sends_reset_by: string | null;
+  sends_reset_at: string | null;
+  ip: string | null;
+  created_at: string;
+  confirmed_at: string | null;
+  mail_status: CommunityStarMailStatus;
+  mail_attempts: number;
+  mail_last_error: string | null;
+  sends: number;
+}
+
+export interface CommunityStarVoteFlag {
+  kind: string;
+  label: string;
+  vote_ids: number[];
+}
+
+export interface CommunityStarVoteSummary {
+  finalists: {
+    id: number;
+    name: string;
+    school: string;
+    stage: CommunityStarStage;
+    confirmed: number;
+    pending: number;
+    void: number;
+  }[];
+  totals: { confirmed: number; pending: number; void: number };
+  mail: { queued: number; sent: number; failed: number };
+  flags: CommunityStarVoteFlag[];
 }

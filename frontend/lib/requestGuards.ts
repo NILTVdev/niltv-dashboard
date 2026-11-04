@@ -18,6 +18,11 @@ export function proxyTarget(segments: string[], search: string, backend: string)
   return url.origin === origin ? url : null;
 }
 
+/** True for a plain database id in a route segment, so it can sit in a backend path. */
+export function positiveId(value: string): boolean {
+  return /^[1-9][0-9]{0,9}$/.test(value);
+}
+
 /**
  * Where to follow a backend redirect (FastAPI sends /api/x to /api/x/): the
  * same /api/ path on the backend the request went to, over its own scheme.
