@@ -24,7 +24,7 @@ from collections import deque
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -32,7 +32,7 @@ from backend.auth import actor_name, require_api_key
 from backend.config import get_settings
 from backend.database import SessionLocal, get_db
 from backend.models import CommunityStarApplication
-from backend.onboarding import mailer
+from backend.onboarding import cognito, mailer
 from backend.routers.applications import _client_ip
 
 log = logging.getLogger(__name__)
@@ -246,6 +246,37 @@ async def submit_application(request: Request, background_tasks: BackgroundTasks
     log.info("community star application id=%s school=%s", app.id, app.school)
     background_tasks.add_task(_confirm, app.id, app.email, app.full_name)
     return {"status": "ok", "id": app.id}
+
+
+def email_hint(email: str) -> str:
+    """j•••@gmail.com: enough for someone to recognise their own address."""
+    name, _, domain = email.partition("@")
+    return f"{name[:1]}•••@{domain}"
+
+
+@public_router.get("/me")
+def my_application(request: Request, response: Response, db: Session = Depends(get_db)):
+    """Has the signed-in visitor applied? The page uses this to show "You've
+    applied" on any device. Applying never needs an account; this only reads.
+
+    Answers for the Cognito token's own verified email and takes no email
+    input, so it cannot be used to look up anyone else.
+    """
+    response.headers["Cache-Control"] = "no-store"
+    auth = request.headers.get("authorization", "")
+    token = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
+    try:
+        account = cognito.verify(token)
+    except cognito.TokenError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    if not account.email_verified:
+        return {"applied": False}
+    found = db.query(CommunityStarApplication.id).filter(
+        CommunityStarApplication.season == SEASON,
+        CommunityStarApplication.email == account.email).first()
+    if not found:
+        return {"applied": False}
+    return {"applied": True, "email_hint": email_hint(account.email)}
 
 
 # -- Review -----------------------------------------------------------------
