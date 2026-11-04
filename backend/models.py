@@ -694,6 +694,65 @@ class CommunityStarApplication(Base):
     reviewed_by = Column(Text)
     sheet_seen = Column(JSON)
 
+    # Public card overrides (migration 034): empty falls back to the fields above.
+    card_name = Column(Text)
+    card_school = Column(Text)
+    card_sport = Column(Text)
+    card_community = Column(Text)
+
+
+class CommunityStarProgram(Base):
+    """Publish state and voting settings, one row per season (migration 034)."""
+    __tablename__ = "community_star_program"
+
+    season = Column(Text, primary_key=True)
+    finalists_published_at = Column(TIMESTAMP(timezone=True))
+    top5_published_at = Column(TIMESTAMP(timezone=True))
+    winners_published_at = Column(TIMESTAMP(timezone=True))
+    published_by = Column(Text)
+    settings = Column(JSON, nullable=False, server_default="{}")
+    # none_as_null: clearing it must leave SQL NULL, not the JSON value null.
+    frozen_board = Column(JSON(none_as_null=True))
+    frozen_at = Column(TIMESTAMP(timezone=True))
+    dev_now = Column(TIMESTAMP(timezone=True))
+    updated_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+
+
+class CommunityStarVote(Base):
+    """One fan vote: one row per normalised email per season (migration 034).
+    Counts only with status confirmed; tallies are recomputed from these rows."""
+    __tablename__ = "community_star_votes"
+    __table_args__ = (
+        UniqueConstraint("season", "email_norm", name="uq_community_star_vote_email"),
+        Index("idx_community_star_votes_tally", "season", "status", "finalist_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    season = Column(Text, nullable=False)
+    finalist_id = Column(Integer, ForeignKey("community_star_applications.id"), nullable=False)
+    email = Column(Text, nullable=False)
+    email_norm = Column(Text, nullable=False)
+    token_hash = Column(Text)
+    token_expires = Column(TIMESTAMP(timezone=True))
+    status = Column(Text, nullable=False, server_default="pending")
+    void_reason = Column(Text)
+    voided_by = Column(Text)
+    voided_at = Column(TIMESTAMP(timezone=True))
+    restored_by = Column(Text)
+    restored_at = Column(TIMESTAMP(timezone=True))
+    ip = Column(Text)
+    user_agent = Column(Text)
+    confirm_ip = Column(Text)
+    confirm_user_agent = Column(Text)
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+    confirmed_at = Column(TIMESTAMP(timezone=True))
+    mail_status = Column(Text, nullable=False, server_default="queued")
+    mail_attempts = Column(Integer, nullable=False, server_default="0")
+    mail_next_at = Column(TIMESTAMP(timezone=True))
+    mail_last_error = Column(Text)
+    sends = Column(Integer, nullable=False, server_default="0")
+    last_sent_at = Column(TIMESTAMP(timezone=True))
+
 
 class DashboardUser(Base):
     """A dashboard login (migration 030). Roles: admin | general | demo."""

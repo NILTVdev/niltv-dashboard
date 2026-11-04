@@ -174,6 +174,27 @@ def send_community_star_received(to: str, first_name: str) -> bool:
     return _send(to, subject, text, body, preheader="Make sure @NILTV and @NILSTAR accepted your collab invite.")
 
 
+def send_community_star_vote_confirm(to: str, finalist_name: str, link: str) -> bool:
+    """The link opens the page; the vote counts only when the voter presses
+    Confirm my vote there. A mail scanner following the link changes nothing."""
+    subject = "Confirm your NIL TV Community Star vote"
+    text = (
+        f"You picked {finalist_name} in NIL TV Community Star.\n\n"
+        f"Your vote counts only after you confirm it. Open this link and press Confirm my vote:\n\n{link}\n\n"
+        "This link works for 48 hours. One vote per person.\n"
+        "If you didn't ask for this, ignore this email. Nothing will count.\n\nNIL TV\n"
+    )
+    body = (
+        f'<p style="margin:0 0 14px">You picked <b>{html.escape(finalist_name)}</b> in NIL TV Community Star.</p>'
+        '<p style="margin:0 0 18px">Your vote counts only after you confirm it.</p>'
+        f'<p style="margin:0 0 22px"><a href="{html.escape(link)}" style="{_BTN}">Confirm my vote</a></p>'
+        f'<p style="{_MUTED};margin:0 0 10px">This link works for 48 hours. One vote per person. '
+        "If you didn&rsquo;t ask for this, ignore this email. Nothing will count.</p>"
+        f'<p style="{_MUTED};margin:0">NIL TV</p>'
+    )
+    return _send(to, subject, text, body, preheader="Your vote counts only after you confirm it.")
+
+
 def send_declined(to: str, first_name: str) -> bool:
     name = first_name or "there"
     subject = "Your NIL TV application"

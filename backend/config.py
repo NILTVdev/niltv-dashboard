@@ -108,6 +108,11 @@ class Settings(BaseSettings):
                 f"ENVIRONMENT=local disables API auth, so DB_HOST must be a local database "
                 f"({', '.join(self.LOCAL_DB_HOSTS)}), not {self.db_host!r}. "
                 f"Use ENVIRONMENT=dev to point at a shared database.")
+        prod = self.environment == "production"
+        self.community_star_photo_bucket = self.community_star_photo_bucket or (
+            "niltv-prod-video-hls-858321320457" if prod else "niltv-dev-video-hls-858321320457")
+        self.community_star_photo_cdn = self.community_star_photo_cdn or (
+            "https://dr60jt51m7xh2.cloudfront.net" if prod else "https://d1nm1d2txb83wa.cloudfront.net")
 
     def brand_ig_targets(self) -> list[dict]:
         """Owned brand IG accounts to pull. Each entry carries the DB
@@ -260,6 +265,21 @@ class Settings(BaseSettings):
     # Staff sheet for the applications mirror (export job). Empty = the
     # athlete applications sheet (applications_sheet_id), on its own tab.
     community_star_sheet_id: str = ""
+    # Finalists go public at this time, and only once staff have published them
+    # (Wed Nov 25 6pm ET). Fan voting runs Fri Dec 11 9:00am ET until after
+    # Sun Dec 13 11:59pm PT; the close is exclusive.
+    community_star_finalists_at: str = "2026-11-25T23:00:00+00:00"
+    community_star_vote_opens: str = "2026-12-11T14:00:00+00:00"
+    community_star_vote_closes: str = "2026-12-14T08:00:00+00:00"
+    # Vote posts per IP per hour, high enough for one campus network.
+    community_star_vote_rate_per_hour: int = 100
+    # Cloudflare Turnstile. Empty in production means votes answer 503, so
+    # production cannot run unprotected. Empty on dev and local skips the check.
+    turnstile_secret: str = ""
+    # Finalist card photos. Empty = the content bucket and CDN of this
+    # environment (filled in by validate_environment).
+    community_star_photo_bucket: str = ""
+    community_star_photo_cdn: str = ""
 
     # DocuSign eSignature — JWT grant (integration key + RSA private key, one
     # consented user). Empty integration key = DocuSign disabled: approve

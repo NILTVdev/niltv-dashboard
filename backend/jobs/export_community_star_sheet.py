@@ -15,6 +15,10 @@ survive; when both change the same cell between two runs, the sheet wins.
 Every other column is a read-only mirror, overwritten on each run; the
 database is the system of record.
 
+Once the finalists are published, Stage is dashboard only: a sheet edit to it
+is ignored and the next write puts the database value back. The separate
+"Votes" tab then carries per-finalist counts for the team.
+
 Schedule: every 15 minutes.
 No-op (exit 0, one log line) until one of the sheet ids is set.
 """
@@ -33,10 +37,13 @@ from backend.jobs.base import run_job
 from backend.models import CommunityStarApplication
 from backend.onboarding import sheets
 from backend.routers.community_star import SEASON, STAGE_LABELS, STAGES, apply_review, parse_stage
+from backend.routers.community_star_voting import get_program, vote_tallies
 
 logger = logging.getLogger(__name__)
 
 TAB = "Community Star"
+VOTES_TAB = "Votes"
+VOTES_HEADER = ["ID", "Finalist", "School", "Stage", "Confirmed", "Pending", "Void", "Updated (UTC)"]
 
 # Team columns: header -> review field. Kept beside the entry so a reviewer
 # sees the post link and the decision together.
@@ -111,9 +118,10 @@ def _row(a: CommunityStarApplication) -> list[Any]:
     ]
 
 
-def import_sheet_edits(db: Session, sheet_id: str, by_id: dict[int, CommunityStarApplication]) -> int:
+def import_sheet_edits(db: Session, sheet_id: str, by_id: dict[int, CommunityStarApplication],
+                       stage_locked: bool = False) -> int:
     """Apply team-column edits made in the sheet since the last run. Returns
-    the number of rows changed."""
+    the number of rows changed. ``stage_locked`` skips the Stage column."""
     table = sheets.read_table(sheet_id, TAB)
     if not table:
         return 0
@@ -132,6 +140,8 @@ def import_sheet_edits(db: Session, sheet_id: str, by_id: dict[int, CommunitySta
             continue   # not written by a previous run yet: nothing to compare
         edits = {}
         for field, c in cols.items():
+            if field == "stage" and stage_locked:
+                continue
             cell = cells[c] if c < len(cells) else ""
             now = _norm(field, cell)
             if now != a.sheet_seen.get(field, now):
@@ -149,6 +159,18 @@ def import_sheet_edits(db: Session, sheet_id: str, by_id: dict[int, CommunitySta
     return changed_rows
 
 
+def write_votes_tab(db: Session, sheet_id: str) -> None:
+    """Per-finalist counts on their own tab. A failure here must not cost the
+    applications tab its run."""
+    stamp = _d(datetime.now(tz=timezone.utc))
+    rows = [[r["id"], r["name"], r["school"], STAGE_LABELS.get(r["stage"], r["stage"]),
+             r["confirmed"], r["pending"], r["void"], stamp] for r in vote_tallies(db)]
+    try:
+        sheets.write_table(sheet_id, VOTES_TAB, VOTES_HEADER, rows)
+    except sheets.SheetsError as e:
+        logger.warning("community star sheet: votes tab skipped: %s", e)
+
+
 def export_community_star(db: Session) -> int:
     s = get_settings()
     sheet_id = s.community_star_sheet_id or s.applications_sheet_id
@@ -159,7 +181,8 @@ def export_community_star(db: Session) -> int:
             .filter(CommunityStarApplication.season == SEASON)
             .order_by(CommunityStarApplication.created_at.desc(), CommunityStarApplication.id.desc())
             .all())
-    imported = import_sheet_edits(db, sheet_id, {a.id: a for a in apps})
+    published = get_program(db).finalists_published_at is not None
+    imported = import_sheet_edits(db, sheet_id, {a.id: a for a in apps}, stage_locked=published)
 
     n = sheets.write_table(sheet_id, TAB, HEADER, [_row(a) for a in apps])
     team_cols = [HEADER.index(name) for name in TEAM]
@@ -171,6 +194,8 @@ def export_community_star(db: Session) -> int:
     for a in apps:
         a.sheet_seen = {f: _norm(f, _team_value(a, f)) for f in TEAM.values()}
     db.commit()
+    if published:
+        write_votes_tab(db, sheet_id)
     logger.info("exported %d community star applications to sheet %s (%d sheet edits imported)",
                 n, sheet_id, imported)
     return n
