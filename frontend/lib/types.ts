@@ -346,6 +346,7 @@ export interface GSCSummary {
 
 export interface NetworkScreenFormatStats {
   posts: number;
+  posts_with_views: number;
   total_views: number;
   avg_views: number;
   engagement_rate: number | null;
@@ -360,6 +361,7 @@ export interface NetworkScreenMonthStats {
   avg_posts_per_week: number;
   total_views_monthly: number;
   total_views_weekly: number;
+  posts_with_views_monthly: number;
   avg_views_per_post: number | null;
   format_breakdown: Record<string, NetworkScreenFormatStats>;
   engagement_rate_overall: number | null;
