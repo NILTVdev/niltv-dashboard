@@ -42,6 +42,7 @@ const CHANNEL_COLORS: Record<string, string> = {
   dorecitytv: "#866D4B",
   collegestationtv: "#500000",
   brazostv: "#154734",
+  saltcitytv: "#F76900",
 };
 
 function stats(channel: CampusChannelSummary, key: WindowKey): CampusChannelWindowStats {

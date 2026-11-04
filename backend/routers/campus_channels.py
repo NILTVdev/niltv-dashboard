@@ -37,6 +37,7 @@ CAMPUS_CHANNELS: list[tuple[str, str]] = [
     ("dorecitytv", "Dore City TV"),
     ("collegestationtv", "College Station TV"),
     ("brazostv", "Brazos TV"),
+    ("saltcitytv", "Salt City TV"),
 ]
 
 # Business Discovery cannot read views/shares/saves/reach, so channels pulled
