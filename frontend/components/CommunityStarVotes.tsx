@@ -125,7 +125,11 @@ export default function CommunityStarVotes({ initial }: { initial: Summary | nul
                   className={cn("cursor-pointer hover:bg-gray-50", finalistId === f.id && "bg-[var(--brand-pale)]/40")}
                   onClick={() => setFinalistId(finalistId === f.id ? null : f.id)}
                 >
-                  <td className="px-3 py-2 font-medium">{f.name}</td>
+                  <td className="px-3 py-2">
+                    <span className="font-medium">{f.name}</span>
+                    {f.stage === "disqualified" && <span className="ml-1.5 text-xs text-red-700">Disqualified</span>}
+                    <div className="text-xs text-gray-500">{f.school}</div>
+                  </td>
                   <td className="px-3 py-2 text-right tabular-nums">{f.confirmed}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-gray-500">{f.pending}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-gray-500">{f.void}</td>
@@ -230,13 +234,21 @@ function VoteRow({ vote, onVoid, onRestore }: {
 
   return (
     <tr className="align-top">
-      <td className="px-3 py-2 break-all">{vote.email}</td>
+      <td className="px-3 py-2 break-all">
+        {vote.email}
+        {vote.ip && <div className="text-xs text-gray-500">{vote.ip}</div>}
+      </td>
       <td className="px-3 py-2">{vote.finalist_name}</td>
       <td className="px-3 py-2 text-xs">
         <Chip tone={STATUS_TONE[vote.status]}>{vote.status}</Chip>
         {vote.status === "void" && vote.void_reason && (
           <div className="mt-1 text-gray-500">
             {vote.void_reason}{vote.voided_by ? ` · ${vote.voided_by}` : ""}
+          </div>
+        )}
+        {vote.status !== "void" && vote.restored_at && (
+          <div className="mt-1 text-gray-500">
+            Restored {fmtET(vote.restored_at)}{vote.restored_by ? ` · ${vote.restored_by}` : ""}
           </div>
         )}
       </td>
@@ -253,7 +265,7 @@ function VoteRow({ vote, onVoid, onRestore }: {
           <div className="flex items-center justify-end gap-1">
             <input
               value={reason}
-              maxLength={300}
+              maxLength={500}
               onChange={(e) => setReason(e.target.value)}
               placeholder="Reason"
               aria-label={`Reason to void vote ${vote.id}`}

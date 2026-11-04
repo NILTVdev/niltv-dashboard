@@ -195,7 +195,11 @@ export default function CommunityStarView({ initial, summary, program: initialPr
       {section === "program" && (
         <CommunityStarProgram
           program={program}
-          marked={{ finalists, winners: rows.filter((r) => r.stage === "winner").length }}
+          marked={{
+            finalists,
+            top5: rows.filter((r) => r.stage === "top5" || r.stage === "winner").length,
+            winners: rows.filter((r) => r.stage === "winner").length,
+          }}
           onProgram={setProgram}
         />
       )}

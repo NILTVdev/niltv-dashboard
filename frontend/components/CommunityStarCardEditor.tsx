@@ -63,18 +63,18 @@ export default function CommunityStarCardEditor({ row, busy, live, onSave, onUpl
     <>
       <div className="space-y-2">
         <Field label="Name on card" hint="Blank uses the application">
-          <input value={name} maxLength={200} onChange={(e) => setName(e.target.value)} className={INPUT} placeholder={row.full_name} />
+          <input value={name} maxLength={120} onChange={(e) => setName(e.target.value)} className={INPUT} placeholder={row.full_name} />
         </Field>
         <div className="grid grid-cols-2 gap-2">
           <Field label="School">
-            <input value={school} maxLength={200} onChange={(e) => setSchool(e.target.value)} className={INPUT} placeholder={row.school} />
+            <input value={school} maxLength={160} onChange={(e) => setSchool(e.target.value)} className={INPUT} placeholder={row.school} />
           </Field>
           <Field label="Sport">
-            <input value={sport} maxLength={200} onChange={(e) => setSport(e.target.value)} className={INPUT} placeholder={row.sport} />
+            <input value={sport} maxLength={80} onChange={(e) => setSport(e.target.value)} className={INPUT} placeholder={row.sport} />
           </Field>
         </div>
         <Field label="Community">
-          <input value={community} maxLength={200} onChange={(e) => setCommunity(e.target.value)} className={INPUT} placeholder={row.community} />
+          <input value={community} maxLength={160} onChange={(e) => setCommunity(e.target.value)} className={INPUT} placeholder={row.community} />
         </Field>
         <Field label="Cause" hint={`One line, ${cause.length}/200`}>
           <input value={cause} maxLength={200} onChange={(e) => setCause(e.target.value)} className={INPUT} placeholder="Reading hour for local kids" />
@@ -88,7 +88,7 @@ export default function CommunityStarCardEditor({ row, busy, live, onSave, onUpl
           </a>
         )}
         <Field label="Photo link" hint="Upload below, or paste an image URL">
-          <input value={photo} onChange={(e) => setPhoto(e.target.value)} className={INPUT} placeholder="https://..." />
+          <input value={photo} maxLength={500} onChange={(e) => setPhoto(e.target.value)} className={INPUT} placeholder="https://..." />
         </Field>
       </div>
 

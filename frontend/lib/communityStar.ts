@@ -54,15 +54,13 @@ const post = async <T>(path: string, body: unknown = {}) =>
     body: JSON.stringify(body),
   }));
 
-export const fetchProgram = () => get<CommunityStarProgram>("/program");
-
 export const publishStage = (what: CommunityStarPublishable, publish: boolean) =>
-  post<unknown>("/program/publish", { what, publish });
+  post<CommunityStarProgram>("/program/publish", { what, publish });
 
 export const saveSettings = (settings: Partial<CommunityStarSettings>) =>
-  post<unknown>("/program/settings", settings);
+  post<CommunityStarProgram>("/program/settings", settings);
 
-export const setDevClock = (now: string | null) => post<unknown>("/program/dev-clock", { now });
+export const setDevClock = (now: string | null) => post<CommunityStarProgram>("/program/dev-clock", { now });
 
 export const fetchVoteSummary = () => get<CommunityStarVoteSummary>("/votes/summary");
 
@@ -95,20 +93,34 @@ export async function uploadPhoto(id: number, file: File): Promise<CommunityStar
   return data.application;
 }
 
+type PublishState = Pick<
+  CommunityStarProgram,
+  "server_time" | "times" | "finalists_published_at" | "top5_published_at" | "winners_published_at"
+>;
+
 /** Why a stage can't be published yet, or null when the button can be offered. The server checks again. */
 export function publishBlocker(
   what: CommunityStarPublishable,
-  program: Pick<CommunityStarProgram, "server_time" | "times" | "top5_published_at">,
-  marked: { finalists: number; winners: number },
+  program: PublishState,
+  marked: { finalists: number; top5: number; winners: number },
 ): string | null {
   if (what === "finalists") return marked.finalists < 1 ? "Mark at least one finalist first." : null;
   if (what === "top5") {
-    return new Date(program.server_time) < new Date(program.times.vote_closes)
-      ? `Available after voting closes, ${fmtET(program.times.vote_closes)}.`
-      : null;
+    if (new Date(program.server_time) < new Date(program.times.vote_closes)) {
+      return `Available after voting closes, ${fmtET(program.times.vote_closes)}.`;
+    }
+    if (!program.finalists_published_at) return "Publish the finalists first.";
+    return marked.top5 < 1 ? "Mark the top 5 first." : null;
   }
   if (!program.top5_published_at) return "Publish the top 5 first.";
   return marked.winners < 1 ? "Mark at least one winner first." : null;
+}
+
+/** Stages come down in reverse order. The server checks again. */
+export function unpublishBlocker(what: CommunityStarPublishable, program: PublishState): string | null {
+  if (what === "finalists" && program.top5_published_at) return "Unpublish the top 5 first.";
+  if (what === "top5" && program.winners_published_at) return "Unpublish the winners first.";
+  return null;
 }
 
 /** Only the settings staff changed, so one save can't undo a change made elsewhere. */

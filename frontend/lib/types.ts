@@ -691,7 +691,14 @@ export interface CommunityStarProgram {
   frozen_at: string | null;
   dev_now: string | null;
   settings: CommunityStarSettings;
-  counts: { finalists: number; missing_photo: number; missing_cause: number; missing_youtube: number };
+  counts: {
+    finalists: number;
+    top5: number;
+    winners: number;
+    missing_photo: number;
+    missing_cause: number;
+    missing_youtube: number;
+  };
   readiness: CommunityStarReadiness[];
 }
 
@@ -707,6 +714,9 @@ export interface CommunityStarVote {
   void_reason: string | null;
   voided_by: string | null;
   voided_at: string | null;
+  restored_by: string | null;
+  restored_at: string | null;
+  ip: string | null;
   created_at: string;
   confirmed_at: string | null;
   mail_status: CommunityStarMailStatus;
@@ -722,7 +732,15 @@ export interface CommunityStarVoteFlag {
 }
 
 export interface CommunityStarVoteSummary {
-  finalists: { id: number; name: string; confirmed: number; pending: number; void: number }[];
+  finalists: {
+    id: number;
+    name: string;
+    school: string;
+    stage: CommunityStarStage;
+    confirmed: number;
+    pending: number;
+    void: number;
+  }[];
   totals: { confirmed: number; pending: number; void: number };
   mail: { queued: number; sent: number; failed: number };
   flags: CommunityStarVoteFlag[];

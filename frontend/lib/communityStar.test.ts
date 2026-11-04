@@ -8,6 +8,7 @@ import {
   localInputToIso,
   photoProblem,
   publishBlocker,
+  unpublishBlocker,
   votesQuery,
 } from "./communityStar";
 import type { CommunityStarSettings } from "./types";
@@ -19,25 +20,47 @@ const times = {
   vote_opens: "2026-12-11T14:00:00Z",
   vote_closes: "2026-12-14T08:00:00Z",
 };
-const during = { server_time: "2026-12-12T12:00:00Z", times, top5_published_at: null };
+const during = {
+  server_time: "2026-12-12T12:00:00Z",
+  times,
+  finalists_published_at: "2026-11-24T15:00:00Z",
+  top5_published_at: null,
+  winners_published_at: null,
+};
 const after = { ...during, server_time: "2026-12-14T08:00:00Z" };
+const marked = { finalists: 25, top5: 5, winners: 2 };
 
 describe("publishBlocker", () => {
   it("needs a marked finalist before finalists can publish", () => {
-    expect(publishBlocker("finalists", during, { finalists: 0, winners: 0 })).toMatch(/finalist/);
-    expect(publishBlocker("finalists", during, { finalists: 25, winners: 0 })).toBeNull();
+    expect(publishBlocker("finalists", during, { ...marked, finalists: 0 })).toMatch(/finalist/);
+    expect(publishBlocker("finalists", during, marked)).toBeNull();
   });
 
   it("holds the top 5 until the vote close, which is exclusive", () => {
-    expect(publishBlocker("top5", during, { finalists: 25, winners: 0 })).toMatch(/Dec 14, 3:00 AM ET/);
-    expect(publishBlocker("top5", after, { finalists: 25, winners: 0 })).toBeNull();
+    expect(publishBlocker("top5", during, marked)).toMatch(/Dec 14, 3:00 AM ET/);
+    expect(publishBlocker("top5", after, marked)).toBeNull();
+  });
+
+  it("needs published finalists and marked rows before the top 5", () => {
+    expect(publishBlocker("top5", { ...after, finalists_published_at: null }, marked)).toMatch(/finalists first/);
+    expect(publishBlocker("top5", after, { ...marked, top5: 0 })).toMatch(/top 5 first/);
   });
 
   it("needs the top 5 published and a marked winner before winners", () => {
-    expect(publishBlocker("winners", after, { finalists: 25, winners: 2 })).toMatch(/top 5/);
+    expect(publishBlocker("winners", after, marked)).toMatch(/top 5/);
     const top5Out = { ...after, top5_published_at: "2026-12-14T15:00:00Z" };
-    expect(publishBlocker("winners", top5Out, { finalists: 25, winners: 0 })).toMatch(/winner/);
-    expect(publishBlocker("winners", top5Out, { finalists: 25, winners: 2 })).toBeNull();
+    expect(publishBlocker("winners", top5Out, { ...marked, winners: 0 })).toMatch(/winner/);
+    expect(publishBlocker("winners", top5Out, marked)).toBeNull();
+  });
+});
+
+describe("unpublishBlocker", () => {
+  it("takes stages down in reverse order", () => {
+    const all = { ...after, top5_published_at: "2026-12-14T15:00:00Z", winners_published_at: "2026-12-18T15:00:00Z" };
+    expect(unpublishBlocker("winners", all)).toBeNull();
+    expect(unpublishBlocker("top5", all)).toMatch(/winners/);
+    expect(unpublishBlocker("finalists", all)).toMatch(/top 5/);
+    expect(unpublishBlocker("finalists", after)).toBeNull();
   });
 });
 

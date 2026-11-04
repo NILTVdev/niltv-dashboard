@@ -5,13 +5,13 @@ import { Check, CircleAlert, Clock } from "lucide-react";
 import {
   PHASE_LABEL,
   changedSettings,
-  fetchProgram,
   fmtET,
   localInputToIso,
   publishBlocker,
   publishStage,
   saveSettings,
   setDevClock,
+  unpublishBlocker,
 } from "@/lib/communityStar";
 import { cn } from "@/lib/utils";
 import type { CommunityStarProgram as Program, CommunityStarPublishable, CommunityStarSettings } from "@/lib/types";
@@ -19,7 +19,7 @@ import { Banner, Btn, Chip, Field, Panel, PanelTitle } from "./CommunityStarUi";
 
 interface Props {
   program: Program | null;
-  marked: { finalists: number; winners: number };
+  marked: { finalists: number; top5: number; winners: number };
   onProgram: (program: Program) => void;
 }
 
@@ -38,7 +38,7 @@ function warning(what: CommunityStarPublishable, publish: boolean, program: Prog
   if (what === "finalists") {
     return `${marked.finalists} finalist ${marked.finalists === 1 ? "name goes" : "names go"} public at ${fmtET(program.times.finalists)}, or within a minute if that time has passed. Anyone marked Finalist after this appears too.`;
   }
-  if (what === "top5") return "Rows marked Top 5 and Winner show as the top 5 on niltv.com within a minute.";
+  if (what === "top5") return `${marked.top5} rows marked Top 5 or Winner show as the top 5 on niltv.com within a minute.`;
   return `${marked.winners} ${marked.winners === 1 ? "winner shows" : "winners show"} on niltv.com within a minute.`;
 }
 
@@ -54,12 +54,11 @@ export default function CommunityStarProgram({ program, marked, onProgram }: Pro
     );
   }
 
-  async function run(action: () => Promise<unknown>): Promise<boolean> {
+  async function run(action: () => Promise<Program>): Promise<boolean> {
     setWorking(true);
     setError(null);
     try {
-      await action();
-      onProgram(await fetchProgram());
+      onProgram(await action());
       return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -125,7 +124,13 @@ export default function CommunityStarProgram({ program, marked, onProgram }: Pro
           </ul>
         </Panel>
 
-        <SettingsForm key={JSON.stringify(program.settings)} saved={program.settings} working={working} onSave={(s) => run(() => saveSettings(s))} />
+        <SettingsForm
+          key={JSON.stringify(program.settings)}
+          saved={program.settings}
+          frozen={Boolean(program.frozen_at)}
+          working={working}
+          onSave={(s) => run(() => saveSettings(s))}
+        />
 
         {!program.production && <DevClock program={program} working={working} onSet={(now) => run(() => setDevClock(now))} />}
       </div>
@@ -145,7 +150,7 @@ function PublishRow({ label, what, at, by, program, marked, working, onConfirm }
 }) {
   const [asking, setAsking] = useState(false);
   const published = Boolean(at);
-  const blocker = published ? null : publishBlocker(what, program, marked);
+  const blocker = published ? unpublishBlocker(what, program) : publishBlocker(what, program, marked);
 
   return (
     <div className="py-2.5 first:pt-0 last:pb-0">
@@ -154,6 +159,7 @@ function PublishRow({ label, what, at, by, program, marked, working, onConfirm }
           <div className="text-sm font-medium">{label}</div>
           <div className="text-xs text-gray-500">
             {published ? `Published ${fmtET(at)}${by ? ` · last action by ${by}` : ""}` : blocker ?? "Not published"}
+            {published && blocker && <span className="block">{blocker}</span>}
           </div>
         </div>
         {!asking && (
@@ -183,8 +189,9 @@ function PublishRow({ label, what, at, by, program, marked, working, onConfirm }
 
 // Remounted by the parent whenever the saved settings change, so the draft
 // always starts from what the server holds.
-function SettingsForm({ saved, working, onSave }: {
+function SettingsForm({ saved, frozen, working, onSave }: {
   saved: CommunityStarSettings;
+  frozen: boolean;
   working: boolean;
   onSave: (settings: Partial<CommunityStarSettings>) => void;
 }) {
@@ -192,7 +199,8 @@ function SettingsForm({ saved, working, onSave }: {
   const changes = changedSettings(saved, draft);
   const set = <K extends keyof CommunityStarSettings>(key: K, value: CommunityStarSettings[K]) =>
     setDraft((d) => ({ ...d, [key]: value }));
-  const whole = (value: number) => (Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0);
+  const whole = (value: number, low: number, high: number) =>
+    Number.isFinite(value) ? Math.min(high, Math.max(low, Math.floor(value))) : low;
 
   return (
     <Panel>
@@ -203,10 +211,10 @@ function SettingsForm({ saved, working, onSave }: {
         <Toggle label="Let an unconfirmed vote change finalist" hint="A second try before confirming replaces the pick." checked={draft.allow_pending_change} onChange={(v) => set("allow_pending_change", v)} />
         <div className="grid gap-2 sm:grid-cols-3">
           <Field label="Confirm grace (min)">
-            <input type="number" min={0} value={draft.confirm_grace_minutes} onChange={(e) => set("confirm_grace_minutes", whole(e.target.valueAsNumber))} className="h-8 w-full rounded-md border px-2 text-sm bg-white" />
+            <input type="number" min={0} max={1440} disabled={frozen} value={draft.confirm_grace_minutes} onChange={(e) => set("confirm_grace_minutes", whole(e.target.valueAsNumber, 0, 1440))} className="h-8 w-full rounded-md border px-2 text-sm bg-white disabled:opacity-50" />
           </Field>
           <Field label="Board minimum votes">
-            <input type="number" min={0} value={draft.board_min_votes} onChange={(e) => set("board_min_votes", whole(e.target.valueAsNumber))} className="h-8 w-full rounded-md border px-2 text-sm bg-white" />
+            <input type="number" min={1} max={100000} value={draft.board_min_votes} onChange={(e) => set("board_min_votes", whole(e.target.valueAsNumber, 1, 100000))} className="h-8 w-full rounded-md border px-2 text-sm bg-white" />
           </Field>
           <Field label="Card order">
             <select value={draft.card_order} onChange={(e) => set("card_order", e.target.value as CommunityStarSettings["card_order"])} className="h-8 w-full rounded-md border px-2 text-sm bg-white">
@@ -216,8 +224,8 @@ function SettingsForm({ saved, working, onSave }: {
           </Field>
         </div>
         <p className="text-xs text-gray-400">
-          Confirm grace is how long after close a vote already cast can still be confirmed. These are starting values until
-          staff set the voting rules.
+          Confirm grace is how long after close a vote already cast can still be confirmed. It locks once the board
+          freezes. These are starting values until staff set the voting rules.
         </p>
       </div>
       <div className="mt-2 text-right">
