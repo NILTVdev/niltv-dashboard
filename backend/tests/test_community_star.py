@@ -16,7 +16,7 @@ from backend.database import SessionLocal
 from backend.jobs import export_community_star_sheet as export_job
 from backend.main import app
 from backend.models import CommunityStarApplication
-from backend.onboarding import mailer
+from backend.onboarding import cognito, mailer
 from backend.routers import community_star as cs
 
 client = TestClient(app)
@@ -218,6 +218,49 @@ def test_update_needs_key_and_row(db, mail, window_open):
     a = _one(db)
     assert client.post(f"{URL}/{a.id}/update", json={"stage": "finalist"}).status_code == 401
     assert client.post(f"{URL}/999999/update", headers=AUTH, json={"stage": "finalist"}).status_code == 404
+
+
+# -- "You've applied" (signed-in check) -----------------------------------------
+
+ME = "/api/community-star/me"
+
+
+def _signed_in(monkeypatch, email, verified=True):
+    monkeypatch.setattr(cognito, "verify", lambda token: cognito.Account(
+        sub="sub-1", email=email, email_verified=verified, pool_id="pool"))
+
+
+def test_me_finds_own_application(db, mail, window_open, monkeypatch):
+    _one(db)
+    _signed_in(monkeypatch, "jane.doe@example.com")
+    r = client.get(ME, headers={"Authorization": "Bearer token"})
+    assert r.status_code == 200
+    assert r.json() == {"applied": True, "email_hint": "j•••@example.com"}
+    assert r.headers["cache-control"] == "no-store"
+
+
+def test_me_when_not_applied(db, mail, window_open, monkeypatch):
+    _one(db)
+    _signed_in(monkeypatch, "someone.else@example.com")
+    assert client.get(ME, headers={"Authorization": "Bearer token"}).json() == {"applied": False}
+
+
+def test_me_needs_a_sign_in(db):
+    assert client.get(ME).status_code == 401
+    assert client.get(ME, headers={"Authorization": "Bearer not-a-token"}).status_code == 401
+
+
+def test_me_ignores_an_unverified_email(db, mail, window_open, monkeypatch):
+    _one(db)
+    _signed_in(monkeypatch, "jane.doe@example.com", verified=False)
+    assert client.get(ME, headers={"Authorization": "Bearer token"}).json() == {"applied": False}
+
+
+def test_me_cannot_look_up_another_email(db, mail, window_open, monkeypatch):
+    _one(db)
+    _signed_in(monkeypatch, "someone.else@example.com")
+    r = client.get(ME, params={"email": "jane.doe@example.com"}, headers={"Authorization": "Bearer token"})
+    assert r.json() == {"applied": False}
 
 
 # -- Sheet ------------------------------------------------------------------
