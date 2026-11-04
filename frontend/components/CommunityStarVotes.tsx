@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Download, RefreshCw } from "lucide-react";
-import { VOTES_CSV_URL, fetchVoteSummary, fetchVotes, fmtET, restoreVote, voidVote } from "@/lib/communityStar";
+import { VOTES_CSV_URL, canResetSends, fetchVoteSummary, fetchVotes, fmtET, resetVoteSends, restoreVote, voidVote } from "@/lib/communityStar";
 import { cn } from "@/lib/utils";
 import type {
   CommunityStarMailStatus,
@@ -203,7 +203,7 @@ export default function CommunityStarVotes({ initial }: { initial: Summary | nul
                 <tr><td colSpan={7} className="px-3 py-8 text-center text-gray-400">No votes match.</td></tr>
               )}
               {votes?.map((v) => (
-                <VoteRow key={v.id} vote={v} onVoid={(reason) => act(() => voidVote(v.id, reason))} onRestore={() => act(() => restoreVote(v.id))} />
+                <VoteRow key={v.id} vote={v} onVoid={(reason) => act(() => voidVote(v.id, reason))} onRestore={() => act(() => restoreVote(v.id))} onResetSends={() => act(() => resetVoteSends(v.id))} />
               ))}
             </tbody>
           </table>
@@ -213,10 +213,11 @@ export default function CommunityStarVotes({ initial }: { initial: Summary | nul
   );
 }
 
-function VoteRow({ vote, onVoid, onRestore }: {
+function VoteRow({ vote, onVoid, onRestore, onResetSends }: {
   vote: Vote;
   onVoid: (reason: string) => Promise<boolean>;
   onRestore: () => Promise<boolean>;
+  onResetSends: () => Promise<boolean>;
 }) {
   const [voiding, setVoiding] = useState(false);
   const [reason, setReason] = useState("");
@@ -255,6 +256,11 @@ function VoteRow({ vote, onVoid, onRestore }: {
       <td className="px-3 py-2 text-xs text-gray-600 whitespace-nowrap" title={vote.mail_last_error ?? undefined}>
         <span className={cn(vote.mail_status === "failed" && "font-semibold text-red-700")}>{MAIL_LABEL[vote.mail_status]}</span>
         {vote.sends > 1 && ` · ${vote.sends} sends`}
+        {vote.sends_reset_at && (
+          <div className="mt-1 text-gray-500">
+            Sends reset {fmtET(vote.sends_reset_at)}{vote.sends_reset_by ? ` · ${vote.sends_reset_by}` : ""}
+          </div>
+        )}
       </td>
       <td className="px-3 py-2 text-xs text-gray-500 whitespace-nowrap">{fmtET(vote.created_at)}</td>
       <td className="px-3 py-2 text-xs text-gray-500 whitespace-nowrap">{fmtET(vote.confirmed_at)}</td>
@@ -275,7 +281,12 @@ function VoteRow({ vote, onVoid, onRestore }: {
             <Btn disabled={busy} onClick={() => setVoiding(false)}>Cancel</Btn>
           </div>
         ) : (
-          <Btn onClick={() => setVoiding(true)}>Void</Btn>
+          <div className="flex items-center justify-end gap-1">
+            {canResetSends(vote) && (
+              <Btn disabled={busy} title="Lets this voter request a new link. It sends nothing." onClick={() => run(onResetSends)}>Reset sends</Btn>
+            )}
+            <Btn onClick={() => setVoiding(true)}>Void</Btn>
+          </div>
         )}
       </td>
     </tr>

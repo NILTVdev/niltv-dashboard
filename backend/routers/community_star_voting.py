@@ -31,7 +31,6 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Request, Response, UploadFile
-from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import func, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
@@ -228,7 +227,10 @@ def _board(db: Session, now: datetime, p: CommunityStarProgram, stage: str,
     if stage not in ("voting", "top5", "winners") or not conf["leaderboard_visible"]:
         return {"state": "hidden", "rows": []}
     if now >= confirm_deadline(p) and p.frozen_board is not None:
-        return {"state": "frozen", "rows": p.frozen_board.get("rows", [])}
+        # A finalist disqualified after the close leaves the page. The stored
+        # snapshot and the other ranks stay as they were.
+        active = {a.id for a in finalists}
+        return {"state": "frozen", "rows": [r for r in p.frozen_board.get("rows", []) if r["id"] in active]}
     rows, total = _ranked(db, finalists)
     if total < int(conf["board_min_votes"]) or not rows:
         return {"state": "empty", "rows": []}
@@ -337,6 +339,12 @@ def _voter_email(value: Any) -> str:
     return email
 
 
+def _in_the_vote(db: Session, finalist_id: int) -> bool:
+    return db.query(CommunityStarApplication.id).filter(
+        CommunityStarApplication.id == finalist_id,
+        CommunityStarApplication.stage.in_(ACTIVE_STAGES)).first() is not None
+
+
 def _active_finalist(db: Session, finalist_id: Any) -> CommunityStarApplication:
     a = None
     if isinstance(finalist_id, int) and not isinstance(finalist_id, bool):
@@ -386,32 +394,38 @@ def _cast(db: Session, payload: dict, ip: str, user_agent: str, background_tasks
         raise HTTPException(status_code=409, detail="this email has already voted")
     else:
         recent = vote.last_sent_at and (real_now - vote.last_sent_at).total_seconds() < _RESEND_SECONDS
-        if recent or vote.sends >= _MAX_SENDS:
+        pick_out = not _in_the_vote(db, vote.finalist_id)
+        expired = vote.token_expires is not None and official_now(db) >= vote.token_expires
+        # The cap stops mail bombing. A link that can no longer be used earns one
+        # more send, so that is at most one extra mail per link lifetime.
+        if recent or (vote.sends >= _MAX_SENDS and not (expired or pick_out)):
             db.rollback()
             raise HTTPException(status_code=429, detail="check your inbox and spam folder for the email we sent")
-        if settings_of(p)["allow_pending_change"]:
+        if settings_of(p)["allow_pending_change"] or pick_out:
             vote.finalist_id = finalist.id
         vote.email = email
         _requeue(vote, real_now)
+    deadline = confirm_deadline(p)
     try:
+        db.flush()
+        vote_id = vote.id
         db.commit()
     except IntegrityError:   # the same voter posted twice at once; the other post queued the mail
         db.rollback()
         return {"status": "pending"}
-    background_tasks.add_task(vote_outbox.send_one, vote.id, confirm_deadline(p))
+    # get_db closes after the background task, so reading an expired attribute
+    # from here on would hold a pooled connection for the whole send.
+    background_tasks.add_task(vote_outbox.send_one, vote_id, deadline)
     return {"status": "pending"}
 
 
 @public_router.post("/votes")
-async def cast_vote(request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+def cast_vote(request: Request, background_tasks: BackgroundTasks,
+              payload: dict = Depends(_json_body), db: Session = Depends(get_db)):
     """Record a pending vote and email the confirm link. It does not count yet."""
-    payload = await _json_body(request)
     if str(payload.get("website") or "").strip():
         return {"status": "pending"}
-    ip = _client_ip(request)
-    user_agent = request.headers.get("user-agent", "")[:400]
-    # Turnstile and the MX lookup block on the network.
-    return await run_in_threadpool(_cast, db, payload, ip, user_agent, background_tasks)
+    return _cast(db, payload, _client_ip(request), request.headers.get("user-agent", "")[:400], background_tasks)
 
 
 def _find_token(db: Session, token: Any, lock: bool = False) -> Optional[CommunityStarVote]:
@@ -427,20 +441,17 @@ def _confirmable(db: Session, vote: CommunityStarVote, now: datetime, p: Communi
     t = schedule()
     if not _finalists_on(now, p) or not t["vote_opens"] <= now < confirm_deadline(p):
         return "closed"
-    if not db.query(CommunityStarApplication.id).filter(
-            CommunityStarApplication.id == vote.finalist_id,
-            CommunityStarApplication.stage.in_(ACTIVE_STAGES)).first():
-        return "closed"
+    if not _in_the_vote(db, vote.finalist_id):
+        return "finalist_out"
     if vote.token_expires is None or now >= vote.token_expires:
         return "expired"
     return "pending"
 
 
 @public_router.post("/votes/preview")
-async def preview_vote(request: Request, db: Session = Depends(get_db)):
+def preview_vote(body: dict = Depends(_json_body), db: Session = Depends(get_db)):
     """What a confirm link is for. The page shows this before the button.
     Never changes anything."""
-    body = await _json_body(request)
     vote = _find_token(db, body.get("token"))
     if vote is None or vote.status == "void":
         return {"status": "invalid", "finalist": None}
@@ -453,10 +464,9 @@ async def preview_vote(request: Request, db: Session = Depends(get_db)):
 
 
 @public_router.post("/votes/confirm")
-async def confirm_vote(request: Request, db: Session = Depends(get_db)):
+def confirm_vote(request: Request, body: dict = Depends(_json_body), db: Session = Depends(get_db)):
     """The only way a vote counts. Single use: a second press answers
     "already" and changes nothing."""
-    body = await _json_body(request)
     vote = _find_token(db, body.get("token"), lock=True)
     if vote is None or vote.status == "void":
         db.rollback()
@@ -548,10 +558,9 @@ def _touch(p: CommunityStarProgram) -> None:
 
 
 @router.post("/program/publish")
-async def publish(request: Request, db: Session = Depends(get_db)):
+def publish(request: Request, body: dict = Depends(_json_body), db: Session = Depends(get_db)):
     """Staff decide what the page shows. Publishing finalists early is fine:
     names still wait for the finalists time."""
-    body = await _json_body(request)
     what, on = body.get("what"), body.get("publish")
     if what not in ("finalists", "top5", "winners") or not isinstance(on, bool):
         raise HTTPException(status_code=400, detail="what must be finalists, top5 or winners; publish true or false")
@@ -604,8 +613,7 @@ def _setting(key: str, value: Any) -> Any:
 
 
 @router.post("/program/settings")
-async def save_settings(request: Request, db: Session = Depends(get_db)):
-    body = await _json_body(request)
+def save_settings(body: dict = Depends(_json_body), db: Session = Depends(get_db)):
     if not body:
         raise HTTPException(status_code=400, detail="expected settings")
     try:
@@ -623,11 +631,10 @@ async def save_settings(request: Request, db: Session = Depends(get_db)):
 
 
 @router.post("/program/dev-clock")
-async def dev_clock(request: Request, db: Session = Depends(get_db)):
+def dev_clock(body: dict = Depends(_json_body), db: Session = Depends(get_db)):
     """Rehearse the stages off production. {"now": iso} or {"now": null}."""
     if get_settings().is_production:
         raise HTTPException(status_code=403, detail="the dev clock is off in production")
-    body = await _json_body(request)
     raw = body.get("now")
     when = None
     if raw is not None:
@@ -720,6 +727,7 @@ def _vote_out(v: CommunityStarVote, name: str) -> dict:
         "id": v.id, "finalist_id": v.finalist_id, "finalist_name": name, "email": v.email, "status": v.status,
         "void_reason": v.void_reason, "voided_by": v.voided_by, "voided_at": v.voided_at,
         "restored_by": v.restored_by, "restored_at": v.restored_at,
+        "sends_reset_by": v.sends_reset_by, "sends_reset_at": v.sends_reset_at,
         "ip": v.ip, "user_agent": v.user_agent, "confirm_ip": v.confirm_ip,
         "confirm_user_agent": v.confirm_user_agent,
         "created_at": v.created_at, "confirmed_at": v.confirmed_at,
@@ -754,7 +762,8 @@ def list_votes(
 
 _CSV_COLUMNS = ("id", "finalist_id", "finalist_name", "email", "status", "created_at", "confirmed_at",
                 "void_reason", "voided_by", "voided_at", "restored_by", "restored_at", "ip", "confirm_ip",
-                "user_agent", "confirm_user_agent", "mail_status", "mail_attempts", "sends", "last_sent_at")
+                "user_agent", "confirm_user_agent", "mail_status", "mail_attempts", "sends", "last_sent_at",
+                "sends_reset_by", "sends_reset_at")
 
 
 def _csv_cell(value: Any) -> Any:
@@ -785,9 +794,8 @@ def _locked_vote(db: Session, vote_id: int) -> CommunityStarVote:
 
 
 @router.post("/votes/{vote_id}/void")
-async def void_vote(vote_id: int, request: Request, db: Session = Depends(get_db)):
+def void_vote(vote_id: int, request: Request, body: dict = Depends(_json_body), db: Session = Depends(get_db)):
     """Rule 9: staff void a bad vote, with a reason. Reversible."""
-    body = await _json_body(request)
     reason = str(body.get("reason") or "").strip()[:500]
     if not reason:
         raise HTTPException(status_code=400, detail="a reason is required")
@@ -818,6 +826,22 @@ def restore_vote(vote_id: int, request: Request, db: Session = Depends(get_db)):
     vote.restored_at = datetime.now(tz=timezone.utc)
     db.commit()
     clear_feed_cache()
+    a = db.get(CommunityStarApplication, vote.finalist_id)
+    return _vote_out(vote, card_name(a))
+
+
+@router.post("/votes/{vote_id}/reset-sends")
+def reset_sends(vote_id: int, request: Request, db: Session = Depends(get_db)):
+    """Give a voter who hit the send cap their resends back. It sends nothing
+    and confirms nothing: the voter still votes again and presses the button."""
+    vote = _locked_vote(db, vote_id)
+    if vote.status != "pending":
+        db.rollback()
+        raise HTTPException(status_code=409, detail="only a pending vote has sends to reset")
+    vote.sends = 0
+    vote.sends_reset_by = actor_name(request, "dashboard")
+    vote.sends_reset_at = datetime.now(tz=timezone.utc)
+    db.commit()
     a = db.get(CommunityStarApplication, vote.finalist_id)
     return _vote_out(vote, card_name(a))
 

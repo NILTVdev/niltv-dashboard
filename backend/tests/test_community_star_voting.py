@@ -5,9 +5,12 @@ called: each is monkeypatched. Time is set through the program's dev clock, the
 same way staff rehearse on dev.
 """
 
+import inspect
 import io
 import json
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -449,6 +452,27 @@ def test_board_freezes_once_and_later_voids_do_not_change_it(db, mail):
     assert client.get(f"{VOTES}/summary", headers=AUTH).json()["totals"]["void"] == 2
 
 
+def test_finalist_disqualified_after_close_leaves_the_frozen_board(db, mail):
+    a, b, c = open_voting(db, "Ann", "Bea", "Cam")
+    confirmed_vote(a, "a1@example.com", mail)
+    confirmed_vote(a, "a2@example.com", mail)
+    confirmed_vote(a, "a3@example.com", mail)
+    confirmed_vote(b, "b1@example.com", mail)
+    confirmed_vote(b, "b2@example.com", mail)
+    confirmed_vote(c, "c1@example.com", mail)
+    set_clock(VOTE_CLOSES)
+    assert [r["rank"] for r in feed()["board"]["rows"]] == [1, 2, 3]
+    stored = db.get(CommunityStarProgram, cs.SEASON).frozen_board
+
+    assert client.post(f"{BASE}/applications/{b.id}/update", headers=AUTH,
+                       json={"stage": "disqualified"}).status_code == 200
+    board = feed()["board"]
+    assert board["state"] == "frozen"
+    assert [(r["rank"], r["name"]) for r in board["rows"]] == [(1, "Ann"), (3, "Cam")]
+    db.expire_all()
+    assert db.get(CommunityStarProgram, cs.SEASON).frozen_board == stored
+
+
 def test_grace_holds_the_board_open_then_freezes(db, mail):
     a, = open_voting(db)
     settings(confirm_grace_minutes=30)
@@ -669,6 +693,55 @@ def test_resend_spacing_and_cap(db, mail):
     assert len(mail) == 3 and row_for(db).sends == 3
 
 
+def _use_up_sends(db, finalist):
+    vote(finalist)
+    for _ in range(2):
+        _age_last_send(db)
+        assert vote(finalist).status_code == 200
+    _age_last_send(db)
+
+
+def test_expired_link_earns_one_more_send_past_the_cap(db, mail):
+    a, = open_voting(db)
+    set_clock(VOTE_OPENS)
+    _use_up_sends(db, a)
+    assert vote(a).status_code == 429          # the third link is still good
+    set_clock("2026-12-13T14:00:00+00:00")     # 48 hours on
+    assert client.post(f"{VOTES}/preview", json={"token": token_of(mail[-1])}).json()["status"] == "expired"
+
+    assert vote(a).status_code == 200
+    assert len(mail) == 4
+    _age_last_send(db)
+    assert vote(a).status_code == 429          # the new link holds the cap again
+    assert confirm(token_of(mail[-1])).json() == {"status": "confirmed"}
+
+
+def test_staff_can_reset_the_send_cap(db, mail):
+    a, = open_voting(db)
+    _use_up_sends(db, a)
+    assert vote(a).status_code == 429
+    vote_id = row_for(db).id
+
+    r = client.post(f"{VOTES}/{vote_id}/reset-sends", headers=AUTH)
+    assert r.status_code == 200, r.text
+    assert r.json()["sends"] == 0 and r.json()["sends_reset_by"] and r.json()["sends_reset_at"]
+    assert r.json()["status"] == "pending" and len(mail) == 3      # sends nothing, confirms nothing
+
+    assert vote(a).status_code == 200
+    assert len(mail) == 4
+
+
+@pytest.mark.parametrize("void", [False, True])
+def test_only_a_pending_vote_can_reset_sends(db, mail, void):
+    a, = open_voting(db)
+    confirmed_vote(a, "fan@example.com", mail)
+    vote_id = row_for(db).id
+    if void:
+        client.post(f"{VOTES}/{vote_id}/void", headers=AUTH, json={"reason": "fake"})
+    assert client.post(f"{VOTES}/{vote_id}/reset-sends", headers=AUTH).status_code == 409
+    assert client.post(f"{VOTES}/999999/reset-sends", headers=AUTH).status_code == 404
+
+
 def test_pending_pick_can_change_by_default(db, mail):
     a, b = open_voting(db, "Ann", "Bea")
     vote(a)
@@ -783,9 +856,31 @@ def test_disqualified_finalist_cannot_gain_a_confirm(db, mail):
     a, = open_voting(db)
     vote(a)
     client.post(f"{BASE}/applications/{a.id}/update", headers=AUTH, json={"stage": "disqualified"})
-    assert confirm(token_of(mail[0])).status_code == 410
+    r = confirm(token_of(mail[0]))
+    assert r.status_code == 410 and r.json()["detail"] == "finalist_out"
     assert client.post(f"{VOTES}/preview", json={"token": token_of(mail[0])}).json() == {
-        "status": "closed", "finalist": None}
+        "status": "finalist_out", "finalist": None}
+    assert row_for(db).status == "pending"
+
+
+def test_after_the_close_a_disqualified_pick_reads_closed(db, mail):
+    a, = open_voting(db)
+    vote(a)
+    client.post(f"{BASE}/applications/{a.id}/update", headers=AUTH, json={"stage": "disqualified"})
+    set_clock(VOTE_CLOSES)
+    assert client.post(f"{VOTES}/preview", json={"token": token_of(mail[0])}).json()["status"] == "closed"
+
+
+@pytest.mark.parametrize("allow_change", [True, False])
+def test_voter_with_a_disqualified_pick_can_choose_again(db, mail, allow_change):
+    a, b = open_voting(db, "Ann", "Bea")
+    settings(allow_pending_change=allow_change)
+    _use_up_sends(db, a)
+    client.post(f"{BASE}/applications/{a.id}/update", headers=AUTH, json={"stage": "disqualified"})
+
+    assert vote(b).status_code == 200
+    assert row_for(db).finalist_id == b.id and mail[-1]["name"] == "Bea"
+    assert confirm(token_of(mail[-1])).json() == {"status": "confirmed"}
 
 
 def test_no_setting_can_confirm_a_vote(db, mail):
@@ -975,7 +1070,8 @@ def test_publish_records_who_and_clears_the_cache(db):
 # -- Staff access and settings ------------------------------------------------
 
 STAFF_GETS = ["/program", "/votes/summary", "/votes", "/votes.csv"]
-STAFF_POSTS = ["/program/publish", "/program/settings", "/program/dev-clock", "/votes/1/void", "/votes/1/restore"]
+STAFF_POSTS = ["/program/publish", "/program/settings", "/program/dev-clock", "/votes/1/void", "/votes/1/restore",
+               "/votes/1/reset-sends"]
 
 
 @pytest.mark.parametrize("path", STAFF_GETS)
@@ -1256,6 +1352,55 @@ def test_resend_during_a_send_keeps_the_newer_token(db, mail):
     vote_outbox._finish(db, claimed[0], claimed[1], True)
     db.refresh(row)
     assert row.mail_status == "queued" and row.sends == 0 and row.token_hash is None
+
+
+def test_vote_rush_holds_no_connection_during_the_send(db, monkeypatch):
+    """More posts than the pool has connections, every mail stuck in the mailer.
+    get_db closes after the background task, so a session left in a transaction
+    would pin a connection each and the sends could never claim their rows."""
+    posts = engine.pool.size() + engine.pool._max_overflow + 5
+    a, = open_voting(db)
+    finalist_id = a.id
+    db.rollback()
+    release = threading.Event()
+    entered = threading.Semaphore(0)
+
+    def held(to, name, link):
+        entered.release()
+        return release.wait(30)
+
+    monkeypatch.setattr(mailer, "send_community_star_vote_confirm", held)
+
+    def post(n):
+        return client.post(VOTES, json={"finalistId": finalist_id, "email": f"fan{n}@example.com"}).status_code
+
+    with ThreadPoolExecutor(max_workers=posts) as pool:
+        futures = [pool.submit(post, n) for n in range(posts)]
+        try:
+            for _ in range(posts):
+                assert entered.acquire(timeout=20), "a send never reached the mailer"
+            assert engine.pool.checkedout() == 0
+        finally:
+            release.set()
+        assert [f.result(timeout=30) for f in futures] == [200] * posts
+    assert db.query(CommunityStarVote).filter(CommunityStarVote.mail_status == "sent").count() == posts
+
+
+def test_vote_routes_stay_off_the_event_loop():
+    for route in (voting.cast_vote, voting.preview_vote, voting.confirm_vote, voting.publish, voting.save_settings,
+                  voting.dev_clock, voting.void_vote, voting.restore_vote, voting.reset_sends):
+        assert not inspect.iscoroutinefunction(route), route.__name__
+
+
+def test_a_mail_backlog_leaves_the_row_for_the_thread(db, mail, monkeypatch):
+    a, = open_voting(db)
+    monkeypatch.setattr(vote_outbox, "_next_slot", vote_outbox.time.monotonic() + 60)
+    assert vote(a).status_code == 200
+    assert mail == [] and row_for(db).mail_status == "queued"
+
+    monkeypatch.setattr(vote_outbox, "_next_slot", 0.0)
+    assert vote_outbox.drain(db, _deadline()) == 1
+    assert len(mail) == 1
 
 
 def test_outbox_thread_is_off_under_tests():

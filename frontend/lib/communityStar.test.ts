@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   PHOTO_MAX_BYTES,
+  VOTE_SEND_CAP,
+  canResetSends,
   cardValue,
   changedSettings,
   errorText,
@@ -101,6 +103,15 @@ describe("votesQuery", () => {
   it("leaves out the filters that aren't set", () => {
     expect(votesQuery("all", null)).toBe("limit=500");
     expect(votesQuery("void", 12, 50)).toBe("limit=50&status=void&finalist_id=12");
+  });
+});
+
+describe("canResetSends", () => {
+  it("offers the reset only to a pending vote at the cap", () => {
+    expect(canResetSends({ status: "pending", sends: VOTE_SEND_CAP })).toBe(true);
+    expect(canResetSends({ status: "pending", sends: VOTE_SEND_CAP - 1 })).toBe(false);
+    expect(canResetSends({ status: "confirmed", sends: VOTE_SEND_CAP })).toBe(false);
+    expect(canResetSends({ status: "void", sends: VOTE_SEND_CAP })).toBe(false);
   });
 });
 

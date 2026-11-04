@@ -33,6 +33,7 @@ TOKEN_HOURS = 48
 BACKOFF_MINUTES = (1, 5, 15, 60)   # after the 1st..4th failure; the 5th is final
 _LEASE = timedelta(minutes=5)      # a crash mid-send frees the row after this
 _MIN_GAP = 0.1                     # 10 mails a second, shared by every sender
+_MAX_INLINE_WAIT = 1.0             # past this a vote post leaves its mail to the thread
 _IDLE_SECONDS = 5.0
 _ERROR_SECONDS = 30.0
 _BATCH = 50
@@ -60,6 +61,11 @@ def _pace() -> None:
         _next_slot = max(now, _next_slot) + _MIN_GAP
     if wait:
         time.sleep(wait)
+
+
+def _backlogged() -> bool:
+    with _pace_lock:
+        return _next_slot - time.monotonic() > _MAX_INLINE_WAIT
 
 
 def _utcnow() -> datetime:
@@ -131,7 +137,11 @@ def _send_claimed(db: Session, claimed: tuple) -> None:
 
 
 def send_one(vote_id: int, confirm_deadline: datetime) -> None:
-    """Background task after a vote post: try this row now."""
+    """Background task after a vote post: try this row now. In a rush the row
+    stays queued for the thread, so posts don't sit in worker threads waiting
+    for a mail slot."""
+    if _backlogged():
+        return
     db = SessionLocal()
     try:
         claimed = _claim(db, confirm_deadline, vote_id)

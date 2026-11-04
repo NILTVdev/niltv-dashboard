@@ -716,6 +716,8 @@ export interface CommunityStarVote {
   voided_at: string | null;
   restored_by: string | null;
   restored_at: string | null;
+  sends_reset_by: string | null;
+  sends_reset_at: string | null;
   ip: string | null;
   created_at: string;
   confirmed_at: string | null;

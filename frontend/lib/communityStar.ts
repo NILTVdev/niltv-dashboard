@@ -78,6 +78,14 @@ export const voidVote = (id: number, reason: string) => post<unknown>(`/votes/${
 
 export const restoreVote = (id: number) => post<unknown>(`/votes/${id}/restore`);
 
+export const resetVoteSends = (id: number) => post<unknown>(`/votes/${id}/reset-sends`);
+
+/** The backend's send cap: past it a voter can't get a new link until the old one expires. */
+export const VOTE_SEND_CAP = 3;
+
+export const canResetSends = (vote: Pick<CommunityStarVote, "status" | "sends">) =>
+  vote.status === "pending" && vote.sends >= VOTE_SEND_CAP;
+
 /** Why a file can't be a finalist photo, or null when it can. */
 export function photoProblem(file: { type: string; size: number }): string | null {
   if (!file.type.startsWith("image/")) return "Choose an image file";

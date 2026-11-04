@@ -740,6 +740,8 @@ class CommunityStarVote(Base):
     voided_at = Column(TIMESTAMP(timezone=True))
     restored_by = Column(Text)
     restored_at = Column(TIMESTAMP(timezone=True))
+    sends_reset_by = Column(Text)
+    sends_reset_at = Column(TIMESTAMP(timezone=True))
     ip = Column(Text)
     user_agent = Column(Text)
     confirm_ip = Column(Text)

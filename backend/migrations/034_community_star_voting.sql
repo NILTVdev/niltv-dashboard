@@ -50,6 +50,8 @@ CREATE TABLE IF NOT EXISTS community_star_votes (
     voided_at          TIMESTAMPTZ,
     restored_by        TEXT,
     restored_at        TIMESTAMPTZ,
+    sends_reset_by     TEXT,
+    sends_reset_at     TIMESTAMPTZ,
     ip                 TEXT,
     user_agent         TEXT,
     confirm_ip         TEXT,
