@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from backend.database import SessionLocal
 from backend.main import app
-from backend.models import BrandSnapshot
+from backend.models import BrandSnapshot, NiltvNetworkPost
 
 client = TestClient(app)
 AUTH = {"X-API-Key": "test"}
@@ -80,3 +80,58 @@ def test_prevmonth_mode_shows_last_complete_month():
     cur = ig["current_month"]
     assert cur["followers"] == 100
     assert cur["new_followers_monthly"] == 0
+
+
+def _seed_posts():
+    # Clamped to the month start so a CI run in the first minutes of a UTC month
+    # cannot seed these rows into the prior month.
+    now = datetime.now(timezone.utc)
+    published = max(now - timedelta(minutes=5), now.replace(day=1, hour=0, minute=0, second=0, microsecond=0))
+    db = SessionLocal()
+    try:
+        db.query(NiltvNetworkPost).delete()
+        common = dict(account_username="niltv", collab_accounts="niltv", publish_time=published)
+        db.add_all([
+            NiltvNetworkPost(post_id="a", post_type="REELS", views=1000, likes=50, **common),
+            NiltvNetworkPost(post_id="b", post_type="REELS", views=0, likes=0, **common),
+            # Owner hides the count: views unknown, likes visible.
+            NiltvNetworkPost(post_id="c", post_type="REELS", views=None, likes=900, **common),
+            NiltvNetworkPost(post_id="d", post_type="IMAGE", views=None, likes=10, **common),
+        ])
+        db.commit()
+    finally:
+        db.close()
+
+
+def _clear_posts():
+    db = SessionLocal()
+    try:
+        db.query(NiltvNetworkPost).delete()
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_averages_and_rates_leave_out_posts_with_no_views():
+    _seed()
+    _seed_posts()
+    try:
+        cur = _instagram("month")["current_month"]
+    finally:
+        _clear_posts()
+
+    assert cur["posts_monthly"] == 4
+    assert cur["posts_with_views_monthly"] == 2
+    assert cur["total_views_monthly"] == 1000
+    # A real 0 counts toward the average; unknown views do not.
+    assert cur["avg_views_per_post"] == 500.0
+    # Only the likes of posts with views: 50 / 1000, not (50 + 900 + 10) / 1000.
+    assert cur["engagement_rate_overall"] == 5.0
+
+    reels = cur["format_breakdown"]["REELS"]
+    assert (reels["posts"], reels["posts_with_views"], reels["avg_views"]) == (3, 2, 500.0)
+    assert reels["engagement_rate"] == 5.0
+
+    images = cur["format_breakdown"]["IMAGE"]
+    assert (images["posts"], images["posts_with_views"], images["avg_views"]) == (1, 0, 0.0)
+    assert images["engagement_rate"] is None
