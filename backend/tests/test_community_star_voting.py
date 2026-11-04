@@ -530,7 +530,7 @@ def test_confirm_link_carries_the_token_in_the_fragment_and_it_is_stored_hashed(
     a, = open_voting(db)
     vote(a)
     link = mail[0]["link"]
-    assert re.fullmatch(r"https://niltv\.com/communitystar/#confirm=[A-Za-z0-9_-]{43}", link)
+    assert re.fullmatch(re.escape(get_settings().vote_site_base) + r"/communitystar/#confirm=[A-Za-z0-9_-]{43}", link)
     token = token_of(mail[0])
     row = row_for(db)
     assert row.token_hash == vote_outbox.hash_token(token) and token not in row.token_hash
@@ -904,7 +904,24 @@ def test_turnstile_fails_closed_in_production(db, mail, monkeypatch):
     r = vote(a)
     assert r.status_code == 503
     assert db.query(CommunityStarVote).count() == 0
-    assert feed()["voting"] == {"open": False, "paused": True, "turnstile": False}
+    assert feed()["voting"] == {"open": False, "paused": True, "turnstile": False, "turnstile_site_key": ""}
+
+
+def test_confirm_links_land_on_the_site_of_their_own_environment(monkeypatch):
+    s = get_settings()
+    monkeypatch.setattr(s, "environment", "dev")
+    assert s.vote_site_base == s.community_star_dev_site
+    monkeypatch.setattr(s, "environment", "production")
+    assert s.vote_site_base == "https://niltv.com"
+
+
+def test_production_with_one_turnstile_key_stays_paused(db, mail, monkeypatch):
+    a, = open_voting(db)
+    s = get_settings()
+    monkeypatch.setattr(s, "environment", "production")
+    monkeypatch.setattr(s, "turnstile_secret", "secret")
+    monkeypatch.setattr(s, "turnstile_site_key", "")
+    assert vote(a).status_code == 503
 
 
 def test_turnstile_skipped_when_empty_on_dev(db, mail, monkeypatch):

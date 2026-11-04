@@ -50,7 +50,7 @@ def hash_token(token: str) -> str:
 
 def confirm_link(token: str) -> str:
     """The token rides in the fragment, so it never reaches a server log."""
-    return f"{get_settings().site_base.rstrip('/')}/communitystar/#confirm={token}"
+    return f"{get_settings().vote_site_base}/communitystar/#confirm={token}"
 
 
 def _pace() -> None:

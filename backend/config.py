@@ -68,6 +68,11 @@ class Settings(BaseSettings):
         "localhost", "127.0.0.1", "::1", "db", "postgres", "host.docker.internal")
 
     @property
+    def vote_site_base(self) -> str:
+        base = self.community_star_dev_site if self.environment == "dev" else self.site_base
+        return base.rstrip("/")
+
+    @property
     def is_production(self) -> bool:
         return self.environment == "production"
 
@@ -276,6 +281,10 @@ class Settings(BaseSettings):
     # Cloudflare Turnstile. Empty in production means votes answer 503, so
     # production cannot run unprotected. Empty on dev and local skips the check.
     turnstile_secret: str = ""
+    turnstile_site_key: str = ""
+    # Dev API only: where a vote confirm link lands. Tokens are per database, so a
+    # dev vote must return to the dev site. Production always uses site_base.
+    community_star_dev_site: str = "https://dev.dkdfgvugisb3v.amplifyapp.com"
     # Finalist card photos. Empty = the content bucket and CDN of this
     # environment (filled in by validate_environment).
     community_star_photo_bucket: str = ""

@@ -146,7 +146,7 @@ def _winners_on(now: datetime, p: CommunityStarProgram) -> bool:
 def _votes_blocked(p: CommunityStarProgram) -> bool:
     """Paused by staff, or production with no Turnstile secret."""
     s = get_settings()
-    return bool(settings_of(p)["voting_paused"]) or (s.is_production and not s.turnstile_secret)
+    return bool(settings_of(p)["voting_paused"]) or (s.is_production and not (s.turnstile_secret and s.turnstile_site_key))
 
 
 # -- Public feed --------------------------------------------------------------
@@ -256,7 +256,8 @@ def build_feed(db: Session) -> dict:
         "stage": stage,
         "times": {k: _iso(v) for k, v in t.items()},
         "voting": {"open": stage == "voting" and not blocked, "paused": blocked,
-                   "turnstile": bool(get_settings().turnstile_secret)},
+                   "turnstile": bool(get_settings().turnstile_secret),
+                   "turnstile_site_key": get_settings().turnstile_site_key},
         "finalists": [_public_card(a, now, p) for a in rows],
         "board": _board(db, now, p, stage, rows),
         "top5_published": _top5_on(now, p),
@@ -512,10 +513,11 @@ def _mail_counts(db: Session) -> dict:
 
 def _readiness(counts: dict, mail: dict) -> list[dict]:
     n = counts["finalists"]
-    secret = bool(get_settings().turnstile_secret)
+    s = get_settings()
+    bot_check = bool(s.turnstile_secret and s.turnstile_site_key)
     return [
-        {"key": "turnstile", "label": "Turnstile secret set", "ok": secret,
-         "detail": None if secret else "Votes answer 503 in production until it is set."},
+        {"key": "turnstile", "label": "Turnstile keys set", "ok": bot_check,
+         "detail": None if bot_check else "Set both keys. Votes are refused in production until then."},
         {"key": "finalists", "label": "Finalists marked", "ok": n > 0, "detail": f"{n} marked"},
         {"key": "photos", "label": "Finalist photos", "ok": n > 0 and not counts["missing_photo"],
          "detail": f"{counts['missing_photo']} missing"},
