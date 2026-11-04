@@ -193,7 +193,7 @@ def test_paused_keeps_the_voting_stage(db):
     settings(voting_paused=True)
     body = feed()
     assert body["stage"] == "voting" and voting.stage_now(db) == "voting"
-    assert body["voting"] == {"open": False, "paused": True, "turnstile": False}
+    assert body["voting"] == {"open": False, "paused": True, "turnstile": False, "turnstile_site_key": ""}
 
 
 # -- Invariant 1: no name before publish and the finalists time ---------------
@@ -918,6 +918,8 @@ def test_confirm_links_land_on_the_site_of_their_own_environment(monkeypatch):
 def test_production_with_one_turnstile_key_stays_paused(db, mail, monkeypatch):
     a, = open_voting(db)
     s = get_settings()
+    clock = _at(DURING_VOTE)
+    monkeypatch.setattr(voting, "official_now", lambda db: clock)
     monkeypatch.setattr(s, "environment", "production")
     monkeypatch.setattr(s, "turnstile_secret", "secret")
     monkeypatch.setattr(s, "turnstile_site_key", "")
