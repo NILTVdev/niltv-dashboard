@@ -1,6 +1,6 @@
 from sqlalchemy import (
     Column, Index, Integer, Text, Boolean, Numeric, BigInteger,
-    TIMESTAMP, ForeignKey, JSON,
+    TIMESTAMP, ForeignKey, JSON, UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -630,6 +630,130 @@ class Application(Base):
         # completion time, which can predate the webhook that recorded it.
         order_by="ApplicationEvent.id",
     )
+
+
+class CommunityStarApplication(Base):
+    """An application to the Community Star grant program (migration 032).
+
+    One row per email per season, posted by niltv.com/communitystar. Not an
+    athlete onboarding row: no review pipeline here, the staff sheet is the
+    working view. Personal data stays in this table and that sheet.
+    """
+    __tablename__ = "community_star_applications"
+    __table_args__ = (
+        UniqueConstraint("season", "email", name="uq_community_star_season_email"),
+        Index("idx_community_star_created", "season", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    season = Column(Text, nullable=False, server_default="2026")
+
+    email = Column(Text, nullable=False)
+    full_name = Column(Text, nullable=False)
+    phone = Column(Text, nullable=False)
+
+    school = Column(Text, nullable=False)
+    school_state = Column(Text)
+    school_domain = Column(Text)
+    school_matched = Column(Boolean, nullable=False, server_default="false")
+    sport = Column(Text, nullable=False)
+    class_year = Column(Text, nullable=False)
+
+    instagram = Column(Text, nullable=False)
+    post_url = Column(Text, nullable=False)
+    community = Column(Text, nullable=False)
+    work = Column(Text, nullable=False)
+    organization = Column(Text)
+
+    collab_invited = Column(Boolean, nullable=False, server_default="false")
+    eligible_and_rules = Column(Boolean, nullable=False, server_default="false")
+    confirm_age = Column(Boolean, nullable=False, server_default="false")
+    consent_privacy = Column(Boolean, nullable=False, server_default="false")
+
+    consent_email = Column(Boolean, nullable=False, server_default="false")
+    consent_sms = Column(Boolean, nullable=False, server_default="false")
+    consent_partners = Column(Boolean, nullable=False, server_default="false")
+    consent_version = Column(Text)
+
+    source = Column(Text, nullable=False, server_default="communitystar")
+    utm = Column(JSON)
+    answers = Column(JSON)
+    user_agent = Column(Text)
+    ip = Column(Text)
+    confirmation_sent = Column(Boolean, nullable=False, server_default="false")
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+
+    # Review state (migration 033): dashboard page + the sheet's team columns.
+    collab_accepted = Column(Boolean, nullable=False, server_default="false")
+    stage = Column(Text, nullable=False, server_default="applied")
+    notes = Column(Text)
+    photo_url = Column(Text)
+    cause = Column(Text)
+    youtube_id = Column(Text)
+    reviewed_at = Column(TIMESTAMP(timezone=True))
+    reviewed_by = Column(Text)
+    sheet_seen = Column(JSON)
+
+    # Public card overrides (migration 034): empty falls back to the fields above.
+    card_name = Column(Text)
+    card_school = Column(Text)
+    card_sport = Column(Text)
+    card_community = Column(Text)
+
+
+class CommunityStarProgram(Base):
+    """Publish state and voting settings, one row per season (migration 034)."""
+    __tablename__ = "community_star_program"
+
+    season = Column(Text, primary_key=True)
+    finalists_published_at = Column(TIMESTAMP(timezone=True))
+    top5_published_at = Column(TIMESTAMP(timezone=True))
+    winners_published_at = Column(TIMESTAMP(timezone=True))
+    published_by = Column(Text)
+    settings = Column(JSON, nullable=False, server_default="{}")
+    # none_as_null: clearing it must leave SQL NULL, not the JSON value null.
+    frozen_board = Column(JSON(none_as_null=True))
+    frozen_at = Column(TIMESTAMP(timezone=True))
+    dev_now = Column(TIMESTAMP(timezone=True))
+    updated_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+
+
+class CommunityStarVote(Base):
+    """One fan vote: one row per normalised email per season (migration 034).
+    Counts only with status confirmed; tallies are recomputed from these rows."""
+    __tablename__ = "community_star_votes"
+    __table_args__ = (
+        UniqueConstraint("season", "email_norm", name="uq_community_star_vote_email"),
+        Index("idx_community_star_votes_tally", "season", "status", "finalist_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    season = Column(Text, nullable=False)
+    finalist_id = Column(Integer, ForeignKey("community_star_applications.id"), nullable=False)
+    email = Column(Text, nullable=False)
+    email_norm = Column(Text, nullable=False)
+    token_hash = Column(Text)
+    token_expires = Column(TIMESTAMP(timezone=True))
+    status = Column(Text, nullable=False, server_default="pending")
+    void_reason = Column(Text)
+    voided_by = Column(Text)
+    voided_at = Column(TIMESTAMP(timezone=True))
+    restored_by = Column(Text)
+    restored_at = Column(TIMESTAMP(timezone=True))
+    sends_reset_by = Column(Text)
+    sends_reset_at = Column(TIMESTAMP(timezone=True))
+    ip = Column(Text)
+    user_agent = Column(Text)
+    confirm_ip = Column(Text)
+    confirm_user_agent = Column(Text)
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+    confirmed_at = Column(TIMESTAMP(timezone=True))
+    mail_status = Column(Text, nullable=False, server_default="queued")
+    mail_attempts = Column(Integer, nullable=False, server_default="0")
+    mail_next_at = Column(TIMESTAMP(timezone=True))
+    mail_last_error = Column(Text)
+    sends = Column(Integer, nullable=False, server_default="0")
+    last_sent_at = Column(TIMESTAMP(timezone=True))
 
 
 class DashboardUser(Base):

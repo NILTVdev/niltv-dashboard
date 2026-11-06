@@ -34,6 +34,7 @@ _NILTV_POST_FILTER = or_(
 
 class FormatStats(BaseModel):
     posts: int
+    posts_with_views: int  # avg_views and engagement_rate cover only these posts
     total_views: int
     avg_views: float
     engagement_rate: Optional[float]  # None when views=0 for every post
@@ -48,6 +49,7 @@ class MonthStats(BaseModel):
     avg_posts_per_week: float
     total_views_monthly: int
     total_views_weekly: int
+    posts_with_views_monthly: int  # avg_views_per_post covers only these posts
     avg_views_per_post: Optional[float]
     format_breakdown: dict[str, FormatStats]
     engagement_rate_overall: Optional[float]
@@ -207,6 +209,18 @@ def _engagement(likes, comments, shares, saves, views) -> Optional[float]:
     return round(total / views * 100, 2)
 
 
+def _rate_for(posts: list[NiltvNetworkPost]) -> Optional[float]:
+    """Engagement rate over `posts`. Pass only posts with a views count, so the
+    numerator never holds engagement from posts missing from the denominator."""
+    return _engagement(
+        sum(p.likes or 0 for p in posts),
+        sum(p.comments or 0 for p in posts),
+        sum(p.shares or 0 for p in posts),
+        sum(p.saves or 0 for p in posts),
+        sum(p.views or 0 for p in posts),
+    )
+
+
 def _compute_month_stats(
     db: Session,
     year: int,
@@ -276,8 +290,12 @@ def _compute_month_stats(
         .scalar() or 0
     )
 
+    # Images, carousels and reels whose owner hides the count have views=None.
+    # That means unknown, not zero, so averages and rates leave those posts out.
+    # A post with a real count of 0 still counts.
+    posts_with_views = [p for p in posts_month if p.views is not None]
     avg_views_per_post = (
-        round(total_views_monthly / posts_monthly, 1) if posts_monthly else None
+        round(total_views_monthly / len(posts_with_views), 1) if posts_with_views else None
     )
 
     # ── Format breakdown ──────────────────────────────────────────────────────
@@ -286,26 +304,18 @@ def _compute_month_stats(
     sorted_posts = sorted(posts_month, key=lambda p: p.post_type or "")
     for fmt, group in groupby(sorted_posts, key=lambda p: p.post_type or "OTHER"):
         gp = list(group)
-        fv = sum(p.views or 0 for p in gp)
-        fl = sum(p.likes or 0 for p in gp)
-        fc = sum(p.comments or 0 for p in gp)
-        fs = sum(p.shares or 0 for p in gp)
-        fsa = sum(p.saves or 0 for p in gp)
+        known = [p for p in gp if p.views is not None]
+        fv = sum(p.views for p in known)
         format_breakdown[fmt] = FormatStats(
             posts=len(gp),
+            posts_with_views=len(known),
             total_views=fv,
-            avg_views=round(fv / len(gp), 1) if gp else 0.0,
-            engagement_rate=_engagement(fl, fc, fs, fsa, fv),
+            avg_views=round(fv / len(known), 1) if known else 0.0,
+            engagement_rate=_rate_for(known),
         )
 
     # ── Overall engagement ────────────────────────────────────────────────────
-    tot_likes = sum(p.likes or 0 for p in posts_month)
-    tot_comments = sum(p.comments or 0 for p in posts_month)
-    tot_shares = sum(p.shares or 0 for p in posts_month)
-    tot_saves = sum(p.saves or 0 for p in posts_month)
-    engagement_rate_overall = _engagement(
-        tot_likes, tot_comments, tot_shares, tot_saves, total_views_monthly
-    )
+    engagement_rate_overall = _rate_for(posts_with_views)
 
     # ── Followers ─────────────────────────────────────────────────────────────
     # Failed pulls write sentinel snapshot rows with followers=NULL (see
@@ -394,6 +404,7 @@ def _compute_month_stats(
         avg_posts_per_week=avg_posts_per_week,
         total_views_monthly=total_views_monthly,
         total_views_weekly=int(total_views_weekly),
+        posts_with_views_monthly=len(posts_with_views),
         avg_views_per_post=avg_views_per_post,
         format_breakdown=format_breakdown,
         engagement_rate_overall=engagement_rate_overall,

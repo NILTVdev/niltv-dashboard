@@ -57,6 +57,10 @@ def test_brazos_is_always_an_explicit_channel() -> None:
     assert ("brazostv", "Brazos TV") in CAMPUS_CHANNELS
 
 
+def test_salt_city_is_a_campus_channel() -> None:
+    assert ("saltcitytv", "Salt City TV") in CAMPUS_CHANNELS
+
+
 def test_brazos_matches_only_the_exact_collab_token() -> None:
     engine = create_engine(
         "sqlite://",

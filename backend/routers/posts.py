@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from backend.auth import require_api_key
 from backend.database import get_db
-from sqlalchemy import func, cast, Date
+from sqlalchemy import cast, Date
 from backend.models import AthletePost, AthletePostSnapshot, ZoomphPost
 
 router = APIRouter(dependencies=[Depends(require_api_key)])
@@ -96,10 +96,14 @@ def get_engagement_by_day(
     athlete_id: int,
     db: Session = Depends(get_db),
 ):
-    """Daily aggregated engagement snapshots for all posts by an athlete.
+    """Likes and comments an athlete's posts gained on each snapshot date.
 
-    Returns the sum of like_count and comment_count across all posts,
-    grouped by snapshot date, ordered chronologically.
+    Each value is the change that day, summed per post, so adding the days up
+    gives the athlete's current total. The first date holds the starting total.
+    A post's first snapshot counts in full on that date. Snapshots stop once a
+    post leaves the latest pull, so comparing daily sums directly would read a
+    post leaving as lost likes; comparing each post with its own last value
+    avoids that.
     """
     post_ids_q = (
         db.query(AthletePost.id)
@@ -108,20 +112,30 @@ def get_engagement_by_day(
     )
     rows = (
         db.query(
+            AthletePostSnapshot.post_id,
             cast(AthletePostSnapshot.captured_at, Date).label("date"),
-            func.coalesce(func.sum(AthletePostSnapshot.like_count), 0).label("likes"),
-            func.coalesce(func.sum(AthletePostSnapshot.comment_count), 0).label("comments"),
+            AthletePostSnapshot.like_count,
+            AthletePostSnapshot.comment_count,
         )
         .filter(AthletePostSnapshot.post_id.in_(post_ids_q.select()))
-        .group_by(cast(AthletePostSnapshot.captured_at, Date))
-        .order_by(cast(AthletePostSnapshot.captured_at, Date))
+        .order_by(AthletePostSnapshot.post_id, AthletePostSnapshot.captured_at)
         .all()
     )
+
+    days: dict = {}
+    last: dict = {}
+    for r in rows:
+        day = days.setdefault(r.date, {"likes": 0, "comments": 0})
+        for field, value in (("likes", r.like_count), ("comments", r.comment_count)):
+            previous = last.get((r.post_id, field))
+            # A hidden count arrives as NULL, or as 0 on older rows. Neither is
+            # a real drop, so keep the last known value for the next comparison.
+            if value is None or (value == 0 and previous):
+                continue
+            day[field] += value - (previous or 0)
+            last[(r.post_id, field)] = value
+
     return [
-        {
-            "date": r.date.isoformat(),
-            "likes": int(r.likes),
-            "comments": int(r.comments),
-        }
-        for r in rows
+        {"date": date.isoformat(), "likes": totals["likes"], "comments": totals["comments"]}
+        for date, totals in sorted(days.items())
     ]

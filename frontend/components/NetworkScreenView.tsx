@@ -147,6 +147,9 @@ function FormatTable({ breakdown }: { breakdown: Record<string, NetworkScreenFor
     return <p className="text-sm text-[#94a3b8]">No posts this month.</p>;
   }
 
+  const totalPosts = rows.reduce((sum, [, s]) => sum + s.posts, 0);
+  const withViews = rows.reduce((sum, [, s]) => sum + s.posts_with_views, 0);
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -177,6 +180,11 @@ function FormatTable({ breakdown }: { breakdown: Record<string, NetworkScreenFor
           ))}
         </tbody>
       </table>
+      {withViews < totalPosts && (
+        <p className="mt-2 text-xs text-[#64748b]">
+          Avg Views and Eng. Rate use the {withViews} of {totalPosts} posts with a view count.
+        </p>
+      )}
     </div>
   );
 }
