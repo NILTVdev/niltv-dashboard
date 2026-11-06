@@ -807,7 +807,7 @@ class ApplicationEvent(Base):
 
 
 # ---------------------------------------------------------------------------
-# Athlete Content Hub (migrations 032, 033)
+# Athlete Content Hub (migrations 035, 036)
 # ---------------------------------------------------------------------------
 
 class HubAsk(Base):

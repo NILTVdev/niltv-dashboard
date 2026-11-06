@@ -1,4 +1,4 @@
--- 033: Content Hub: ask format and tags, and staff approval of submissions.
+-- 036: Content Hub: ask format and tags, and staff approval of submissions.
 --
 -- Staff set a format when posting an ask (a reel, a photo set, a podcast
 -- clip) and tag it so athletes can filter the hub. A submitted claim is

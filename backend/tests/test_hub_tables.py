@@ -1,4 +1,4 @@
-"""Schema tests for the Athlete Content Hub tables (migrations 032, 033).
+"""Schema tests for the Athlete Content Hub tables (migrations 035, 036).
 
 Runs against the seeded Postgres like the other functional tests. Covers the
 rules the schema itself enforces: one claim row per athlete per ask, the

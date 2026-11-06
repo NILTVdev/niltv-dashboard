@@ -1,4 +1,4 @@
-"""Athlete Content Hub: the staff side (migrations 032, 033).
+"""Athlete Content Hub: the staff side (migrations 035, 036).
 
 Staff post content asks, see who claimed each one and the link they
 submitted, and approve submissions. Approved claims are what admin pays
