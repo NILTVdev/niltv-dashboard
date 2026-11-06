@@ -13,6 +13,9 @@ import {
   BULK, CATEGORY_SCOPE, FILTERS, STATUS_LABEL, STATUS_STYLE, countBy, fmtWhen, runLine, scopeLabel, waitingOn,
   type BulkAction, type BulkProgress,
 } from "@/lib/onboarding";
+import Btn from "@/components/onboarding/Btn";
+import BulkBar from "@/components/onboarding/BulkBar";
+import RunLog from "@/components/onboarding/RunLog";
 
 interface Props {
   initial: Application[];
@@ -451,101 +454,6 @@ function RowGroup({ children }: { open: boolean; children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function BulkBar({ count, agreement, stripe, confirm, progress, onAsk, onRun, onClear }: {
-  count: number;
-  agreement: Application[];
-  stripe: Application[];
-  confirm: BulkAction | null;
-  progress: BulkProgress | null;
-  onAsk: (a: BulkAction | null) => void;
-  onRun: (a: BulkAction) => void;
-  onClear: () => void;
-}) {
-  if (progress) {
-    const running = progress.done < progress.total;
-    const sent = progress.done - progress.failed.length;
-    return (
-      <div className="mb-3 rounded-lg border bg-white px-3 py-2 text-sm shadow-sm">
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="font-semibold">
-            {BULK[progress.action].label}: {running ? `sending ${progress.done + 1} of ${progress.total}` : `${sent} sent`}
-            {progress.failed.length > 0 && <span className="text-red-700">, {progress.failed.length} failed</span>}
-          </span>
-          {!running && <Btn onClick={onClear}>Done</Btn>}
-        </div>
-        {progress.failed.length > 0 && (
-          <ul className="mt-1 ml-4 list-disc text-xs text-red-700">
-            {progress.failed.map((f) => <li key={f.name}>{f.name}: {f.error}</li>)}
-          </ul>
-        )}
-      </div>
-    );
-  }
-  const target = confirm === "agreement" ? agreement : stripe;
-  const noStripeYet = stripe.filter((r) => !r.stripe_account_id).length;
-  const plural = (n: number) => (n === 1 ? "athlete" : "athletes");
-  return (
-    <div className="mb-3 rounded-lg border bg-white px-3 py-2 text-sm shadow-sm">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-semibold mr-1">{count} selected</span>
-        <Btn disabled={agreement.length === 0} onClick={() => onAsk("agreement")}
-             title="Re-send the DocuSign agreement to the selected athletes still waiting to sign">
-          <Send className="h-3.5 w-3.5" /> Resend agreement ({agreement.length})
-        </Btn>
-        <Btn disabled={stripe.length === 0} onClick={() => onAsk("stripe")}
-             title="Email the payout link to the selected athletes who signed but have not finished Stripe">
-          <Send className="h-3.5 w-3.5" /> Resend Stripe link ({stripe.length})
-        </Btn>
-        <Btn onClick={onClear}>Clear</Btn>
-      </div>
-      {confirm && (
-        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200">
-          <span>
-            {confirm === "agreement"
-              ? `Send the agreement again to ${target.length} ${plural(target.length)}? Each one gets a DocuSign email.`
-              : `Email the payout link to ${target.length} ${plural(target.length)}?`}
-            {confirm === "stripe" && noStripeYet > 0 && ` ${noStripeYet} of them have no Stripe account yet. One is created for each.`}
-            {count > target.length && " Selected athletes at other steps are skipped."}
-          </span>
-          <Btn tone="primary" onClick={() => onRun(confirm)}>Send</Btn>
-          <Btn onClick={() => onAsk(null)}>Cancel</Btn>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Every change a run makes is a webhook that never arrived; a healthy
-// pipeline shows "0 changed" here night after night.
-function RunLog({ runs }: { runs: ReconcileRun[] }) {
-  return (
-    <div className="mb-5 rounded-xl border bg-white p-3 shadow-sm text-xs">
-      <div className="mb-2 font-semibold text-gray-700">Refresh log</div>
-      <ul className="space-y-2">
-        {runs.map((run) => (
-          <li key={run.id}>
-            <div className={cn("text-gray-700", run.error && "text-red-700")}>
-              {fmtWhen(run.started_at)} · {scopeLabel(run)} ·{" "}
-              {run.finished_at ? runLine(run) : "running"}
-              {run.stats?.signed_no_stripe ? ` · ${run.stats.signed_no_stripe} signed without Stripe` : ""}
-              {run.error ? ` · ${run.error}` : ""}
-            </div>
-            {(run.stats?.changes ?? []).length > 0 && (
-              <ul className="mt-1 ml-4 list-disc text-gray-500">
-                {run.stats.changes!.map((c) => (
-                  <li key={`${run.id}-${c.id}`}>
-                    {c.name} ({c.source === "docusign" ? "DocuSign" : "Stripe"}): {c.from} → {c.to}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
 // Shown only when something is not set up; a configured integration says nothing.
 function Integration({ ok, label }: { ok: boolean; label: string }) {
   if (ok) return null;
@@ -584,27 +492,6 @@ function Progress({ steps }: { steps: ApplicationStep[] }) {
     <div className="flex items-center gap-1.5" title={summary} role="img" aria-label={summary}>
       {steps.map((s) => <span key={s.key} className={cn("h-2 w-2 rounded-full", DOT[s.state])} />)}
     </div>
-  );
-}
-
-function Btn({ children, onClick, disabled, tone = "default", title }: {
-  children: React.ReactNode; onClick: () => void; disabled?: boolean; tone?: "default" | "primary" | "quiet"; title?: string;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      title={title}
-      className={cn(
-        // Bigger tap targets on a phone.
-        "inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors disabled:opacity-50 max-sm:px-3 max-sm:py-2 max-sm:text-sm",
-        tone === "primary" && "bg-[var(--brand)] text-white hover:opacity-90",
-        tone === "quiet" && "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
-        tone === "default" && "border text-gray-700 hover:bg-gray-50",
-      )}
-    >
-      {children}
-    </button>
   );
 }
 
