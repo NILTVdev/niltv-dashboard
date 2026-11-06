@@ -7,7 +7,7 @@ from backend.auth import require_api_key
 from backend.config import get_settings
 from backend.onboarding import vote_outbox
 
-from backend.routers import athletes, snapshots, posts, zoomph, web_analytics, trueblue, reports, brand, ambassadors, network_screen, campus_channels, applications, community_star, community_star_voting, users, hub
+from backend.routers import athletes, snapshots, posts, zoomph, web_analytics, trueblue, reports, brand, ambassadors, network_screen, campus_channels, applications, community_star, community_star_voting, users, hub, hub_athlete
 
 # The interactive docs and OpenAPI schema expose the full route map and auth
 # model, so they are served outside production only.
@@ -74,6 +74,8 @@ app.include_router(community_star_voting.router, prefix="/api/community-star", t
 app.include_router(users.auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 app.include_router(hub.router, prefix="/api/hub", tags=["hub"])
+# The niltv.com /hub/ page, signed in with the site account (no API key).
+app.include_router(hub_athlete.router, prefix="/api/hub/athlete", tags=["hub"])
 
 
 @app.get("/api/health")
