@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isJson, proxyTarget, sameBackendRedirect, sameOrigin } from "./requestGuards";
+import { isJson, positiveId, proxyTarget, sameBackendRedirect, sameOrigin } from "./requestGuards";
 
 const BACKEND = "https://api.niltv.com";
 
@@ -67,5 +67,14 @@ describe("isJson", () => {
     expect(isJson("text/plain")).toBe(false);
     expect(isJson("application/x-www-form-urlencoded")).toBe(false);
     expect(isJson(null)).toBe(false);
+  });
+});
+
+describe("positiveId", () => {
+  it("accepts plain ids and nothing that could change the backend path", () => {
+    expect(positiveId("12")).toBe(true);
+    for (const v of ["", "0", "-1", "1.5", "1/2", "..", "1%2F2", "12 ", "99999999999"]) {
+      expect(positiveId(v)).toBe(false);
+    }
   });
 });

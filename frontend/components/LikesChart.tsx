@@ -38,7 +38,8 @@ export default function LikesChart({ posts, engagementByDay }: Props) {
   let daily: { date: string; likes: number }[];
 
   if (hasSnapshots) {
-    // Snapshot data: actual tracked engagement over time (already sorted by date from API)
+    // Snapshot data: likes gained per day (already sorted by date from the API).
+    // The first entry is the starting total, not a day's gain.
     daily = engagementByDay.map((d) => ({
       date: fmtDate(d.date),
       likes: d.likes,
@@ -66,7 +67,7 @@ export default function LikesChart({ posts, engagementByDay }: Props) {
     return acc;
   }, []);
 
-  const data = mode === "cumulative" ? cumulative : daily;
+  const data = mode === "cumulative" ? cumulative : hasSnapshots ? daily.slice(1) : daily;
 
   if (daily.length < 2) {
     return (
