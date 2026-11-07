@@ -747,3 +747,49 @@ export interface CommunityStarVoteSummary {
   mail: { queued: number; sent: number; failed: number };
   flags: CommunityStarVoteFlag[];
 }
+
+// ── Athlete Content Hub (staff side, backend/routers/hub.py) ─────────────────
+
+export type HubAskStatus = "draft" | "open" | "closed";
+export type HubClaimStatus = "claimed" | "submitted" | "approved";
+
+export interface HubAsk {
+  id: number;
+  title: string;
+  category: string | null;
+  format: string | null;
+  tags: string[];
+  summary: string | null;
+  steps: string[];
+  due_on: string | null;          // "2026-11-14", a calendar day
+  slots: number | null;           // null = open to all athletes
+  status: HubAskStatus;
+  created_by: string | null;
+  created_at: string;
+  closed_at: string | null;
+  claimed: number;
+  submitted: number;
+  approved: number;
+  spots_left: number | null;
+}
+
+export interface HubClaim {
+  id: number;
+  ask_id: number;
+  ask_title: string;
+  application_id: number;
+  athlete_name: string;
+  school: string | null;
+  sport: string | null;
+  status: HubClaimStatus;
+  claimed_at: string;
+  submitted_at: string | null;
+  link: string | null;
+  note: string | null;
+  reviewed_at: string | null;
+  reviewed_by: number | null;
+}
+
+export interface HubAskDetail extends HubAsk {
+  claims: HubClaim[];
+}

@@ -138,3 +138,12 @@ export const getCommunityStarProgram = () =>
   apiFetchFresh<CommunityStarProgram>("/api/community-star/program");
 export const getCommunityStarVoteSummary = () =>
   apiFetchFresh<CommunityStarVoteSummary>("/api/community-star/votes/summary");
+
+// ── Athlete Content Hub (staff side) ──────────────────────────────────────────
+
+import type { HubAsk, HubClaim } from "./types";
+
+export const getHubAsks = (status = "all") =>
+  apiFetchFresh<HubAsk[]>(`/api/hub/asks?status=${encodeURIComponent(status)}`);
+export const getHubQueue = () =>
+  apiFetchFresh<HubClaim[]>("/api/hub/claims?status=submitted");
