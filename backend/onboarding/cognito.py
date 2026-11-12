@@ -96,4 +96,11 @@ def verify(token: Optional[str]) -> Account:
     if not email:
         raise TokenError("account has no email")
     return Account(sub=claims.get("sub", ""), email=email,
-                   email_verified=bool(claims.get("email_verified")), pool_id=pool_id)
+                   email_verified=_is_true(claims.get("email_verified")), pool_id=pool_id)
+
+
+def _is_true(value) -> bool:
+    """Cognito sends email_verified as JSON true, and some flows as the string
+    "true". Anything else (missing, false, "false") counts as not verified,
+    so bool("false") can never pass."""
+    return value is True or (isinstance(value, str) and value.strip().lower() == "true")

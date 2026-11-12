@@ -96,6 +96,7 @@ def fakes(monkeypatch):
     monkeypatch.setattr(mailer, "send_stripe_link", lambda to, name, link: calls["mail"].append((to, link)) or True)
     monkeypatch.setattr(mailer, "send_declined", lambda to, name: calls["declined"].append(to) or True)
     monkeypatch.setattr(mailer, "notify_staff_new_applicant", lambda *a, **k: True)
+    monkeypatch.setattr(mailer, "notify_staff_locked_resubmit", lambda *a, **k: True)
     monkeypatch.setattr(mailer, "send_application_received", lambda *a, **k: True)
     return calls
 
@@ -139,6 +140,73 @@ def test_resubmit_never_resets_status(db, fakes):
     client.post("/api/applications/", json=FORM)
     db.expire_all()
     assert db.query(Application).one().status == "agreement_sent"
+
+
+@pytest.mark.parametrize("status", pipeline.LOCKED_STATUSES)
+def test_resubmit_after_approval_changes_nothing(db, fakes, status):
+    client.post("/api/applications/", json=FORM)
+    app = db.query(Application).one()
+    app.status = status
+    db.commit()
+
+    r = client.post("/api/applications/", json={
+        **FORM, "firstName": "Someone", "lastName": "Else", "collegeEmail": "other@school.edu",
+        "phone": "212-555-0199", "instagram": "@someone.else", "university": "Baylor",
+        "consentTerms": False})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["created"] is False and body["updated"] is False and body["id"] == app.id
+
+    db.expire_all()
+    app = db.query(Application).one()
+    assert app.status == status
+    assert (app.first_name, app.last_name) == ("Jane", "Doe")
+    assert app.college_email == "jdoe@duke.edu" and app.phone == "919-555-0100"
+    assert app.instagram == "jane.doe" and app.university == "Duke University"
+    assert app.consent_terms is True and app.submit_count == 1
+    assert app.answers["firstName"] == "Jane"
+    ev = app.events[-1]
+    assert [e.kind for e in app.events] == ["applied", "resubmit_ignored"]
+    assert ev.actor == "athlete" and ev.detail["status"] == status
+    assert ev.detail["changed"]["first_name"] == "Someone"
+    assert ev.detail["changed"]["instagram"] == "someone.else"
+    assert "sport" not in ev.detail["changed"]   # unchanged answers are not listed
+    assert body["message"] == apps_router.LOCKED_MESSAGE
+
+
+def test_locked_resubmit_emails_staff_only_when_answers_differ(db, fakes, monkeypatch):
+    staff = []
+    monkeypatch.setattr(mailer, "notify_staff_locked_resubmit",
+                        lambda summary, url: staff.append((summary, url)) or True)
+    client.post("/api/applications/", json=FORM)
+    app = db.query(Application).one()
+    app.status = "accepted"
+    db.commit()
+
+    client.post("/api/applications/", json=FORM)   # same answers: nothing to tell staff
+    assert staff == []
+
+    r = client.post("/api/applications/", json={**FORM, "phone": "212-555-0199"})
+    assert r.json()["updated"] is False
+    assert len(staff) == 1
+    summary, url = staff[0]
+    assert "phone: 919-555-0100 -> 212-555-0199" in summary and "Status: accepted" in summary
+    assert url.endswith(f"/niltv-onboarding?id={app.id}")
+
+    pipeline.intake(db, {**FORM, "phone": "000"}, notify=False)   # backfills stay quiet
+    assert len(staff) == 1
+
+
+def test_resubmit_while_declined_still_updates(db, fakes):
+    client.post("/api/applications/", json=FORM)
+    app = db.query(Application).one()
+    app.status = "declined"
+    db.commit()
+    r = client.post("/api/applications/", json={**FORM, "sport": "Field Hockey"})
+    assert "updated" not in r.json()
+    db.expire_all()
+    app = db.query(Application).one()
+    assert app.status == "declined" and app.sport == "Field Hockey" and app.submit_count == 2
 
 
 def test_intake_links_existing_ambassador(db, fakes):
@@ -602,6 +670,18 @@ def test_account_required_when_pools_configured(db, fakes, monkeypatch):
     assert r.status_code == 200
     app = db.query(Application).one()
     assert app.email == "acct@x.com" and app.answers["account"]["sub"] == "abc"
+
+
+@pytest.mark.parametrize("verified", [False, None])
+def test_unverified_account_email_is_refused(db, fakes, monkeypatch, verified):
+    from backend.onboarding import cognito
+    monkeypatch.setattr(get_settings(), "cognito_user_pools", "us-east-1_test:client")
+    monkeypatch.setattr(cognito, "verify", lambda tok: cognito.Account(
+        sub="abc", email="not-mine@x.com", email_verified=verified, pool_id="us-east-1_test"))
+    r = client.post("/api/applications/", json=FORM, headers={"Authorization": "Bearer t"})
+    assert r.status_code == 403
+    assert r.json()["detail"] == "Confirm your email first, then send the application again."
+    assert db.query(Application).count() == 0
 
 
 def test_received_email_only_on_create(db, fakes, monkeypatch):

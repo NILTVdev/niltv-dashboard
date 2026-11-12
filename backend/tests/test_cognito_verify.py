@@ -73,3 +73,15 @@ def test_wrong_audience_or_expired_is_refused():
         cognito.verify(jwt.encode(_claims(aud="someone-else"), PRIVATE, algorithm="RS256"))
     with pytest.raises(cognito.TokenError):
         cognito.verify(jwt.encode(_claims(exp=int(time.time()) - 5), PRIVATE, algorithm="RS256"))
+
+
+@pytest.mark.parametrize("claim, expected", [
+    (True, True), ("true", True), ("TRUE", True),
+    (False, False), ("false", False), ("", False), (None, False), (1, False),
+])
+def test_email_verified_only_when_the_claim_is_true(claim, expected):
+    claims = _claims(email_verified=claim)
+    if claim is None:
+        claims.pop("email_verified")
+    account = cognito.verify(jwt.encode(claims, PRIVATE, algorithm="RS256"))
+    assert account.email_verified is expected
