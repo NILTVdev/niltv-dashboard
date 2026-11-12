@@ -604,6 +604,18 @@ def test_account_required_when_pools_configured(db, fakes, monkeypatch):
     assert app.email == "acct@x.com" and app.answers["account"]["sub"] == "abc"
 
 
+@pytest.mark.parametrize("verified", [False, None])
+def test_unverified_account_email_is_refused(db, fakes, monkeypatch, verified):
+    from backend.onboarding import cognito
+    monkeypatch.setattr(get_settings(), "cognito_user_pools", "us-east-1_test:client")
+    monkeypatch.setattr(cognito, "verify", lambda tok: cognito.Account(
+        sub="abc", email="not-mine@x.com", email_verified=verified, pool_id="us-east-1_test"))
+    r = client.post("/api/applications/", json=FORM, headers={"Authorization": "Bearer t"})
+    assert r.status_code == 403
+    assert r.json()["detail"] == "Confirm your email first, then send the application again."
+    assert db.query(Application).count() == 0
+
+
 def test_received_email_only_on_create(db, fakes, monkeypatch):
     sent = []
     monkeypatch.setattr(mailer, "send_application_received", lambda to, name: sent.append(to) or True)
