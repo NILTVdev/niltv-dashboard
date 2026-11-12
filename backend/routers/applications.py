@@ -46,6 +46,9 @@ _RATE_WINDOW = 3600.0
 _hits: dict[str, deque] = {}
 _MAX_BODY = 64 * 1024
 _HONEYPOT_FIELDS = ("website", "company", "fax")
+UNVERIFIED_EMAIL_MESSAGE = "Confirm your email first, then send the application again."
+LOCKED_MESSAGE = ("Your application is already approved, so we did not change it. "
+                  "To update your details, reach us through the contact page.")
 
 
 # nginx appends the connecting address to X-Forwarded-For, so the trusted value
@@ -106,6 +109,10 @@ async def submit_application(request: Request, db: Session = Depends(get_db)):
             account = cognito.verify(token)
         except cognito.TokenError as e:
             raise HTTPException(status_code=401, detail=str(e))
+        # The roster sync trusts an accepted application's email to grant
+        # portal access, so the account must have proved it owns the address.
+        if not account.email_verified:
+            raise HTTPException(status_code=403, detail=UNVERIFIED_EMAIL_MESSAGE)
         payload["email"] = account.email
         payload["account"] = {"sub": account.sub, "emailVerified": account.email_verified, "pool": account.pool_id}
 
@@ -113,7 +120,11 @@ async def submit_application(request: Request, db: Session = Depends(get_db)):
         app, created = pipeline.intake(db, payload, ip=ip)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return {"status": "ok", "id": app.id, "created": created}
+    out = {"status": "ok", "id": app.id, "created": created}
+    if not created and app.status in pipeline.LOCKED_STATUSES:
+        out["updated"] = False   # already approved: the answers were logged, not applied
+        out["message"] = LOCKED_MESSAGE
+    return out
 
 
 # -- Webhooks ---------------------------------------------------------------

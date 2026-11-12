@@ -27,6 +27,9 @@ log = logging.getLogger(__name__)
 
 STATUSES = ("applicant", "approved", "declined", "agreement_sent", "signed", "stripe_pending", "accepted")
 PROGRAM = "ambassador-fall-2026"
+# From approval on, staff have reviewed this identity and acted on it
+# (agreement, Stripe, portal access). Intake never rewrites these rows.
+LOCKED_STATUSES = ("approved", "agreement_sent", "signed", "stripe_pending", "accepted")
 
 # Form field (camelCase, from niltv.com/athlete-signup/) -> column.
 FIELD_MAP = {
@@ -129,6 +132,13 @@ def intake(db: Session, payload: dict, *, ip: Optional[str] = None,
     submit_count, and never resets the onboarding status. A declined
     applicant re-applying stays declined (staff can re-approve).
 
+    Once staff have approved a row (any status in LOCKED_STATUSES) a
+    re-submit changes nothing on it: the agreement, Stripe account and portal
+    access were all granted to the identity staff reviewed. The attempt is
+    kept as a ``resubmit_ignored`` event listing what the athlete tried to
+    change. When any answer differs, staff are emailed too (unless
+    ``notify`` is off), so they can apply a real correction by hand.
+
     ``applied_at`` backdates a new row (Google Form backfill); ``notify``
     controls the staff email on create. consent_at is stamped only when the
     payload carries consent fields (the legacy Google Form has none).
@@ -138,6 +148,9 @@ def intake(db: Session, payload: dict, *, ip: Optional[str] = None,
         raise ValueError("email is required")
 
     app = db.query(Application).filter(Application.email == email).first()
+    if app is not None and app.status in LOCKED_STATUSES:
+        _record_ignored_resubmit(db, app, payload, source, notify=notify)
+        return app, False
     created = app is None
     if created:
         app = Application(email=email, status="applicant")
@@ -146,16 +159,7 @@ def intake(db: Session, payload: dict, *, ip: Optional[str] = None,
 
     for key, col in FIELD_MAP.items():
         if key in payload and payload[key] not in (None, ""):
-            value = payload[key]
-            if key in HANDLE_FIELDS:
-                value = normalize_handle(value)
-            elif key == "youtube":
-                value = str(value).strip()
-            elif key in ("email", "collegeEmail"):
-                value = normalize_email(value)
-            elif key in ("firstName", "lastName"):
-                value = normalize_name(value)
-            setattr(app, col, value)
+            setattr(app, col, _field_value(key, payload[key]))
     for key, col in CONSENT_FIELDS.items():
         if key in payload:
             setattr(app, col, _as_bool(payload[key]))
@@ -215,6 +219,51 @@ def intake(db: Session, payload: dict, *, ip: Optional[str] = None,
         )
         mailer.notify_staff_new_applicant(summary, f"{_dashboard_base()}/niltv-onboarding?id={app.id}")
     return app, created
+
+
+def _field_value(key: str, value: Any) -> Any:
+    """A form value as intake stores it in its column."""
+    if key in HANDLE_FIELDS:
+        return normalize_handle(value)
+    if key == "youtube":
+        return str(value).strip()
+    if key in ("email", "collegeEmail"):
+        return normalize_email(value)
+    if key in ("firstName", "lastName"):
+        return normalize_name(value)
+    return value
+
+
+def _record_ignored_resubmit(db: Session, app: Application, payload: dict,
+                             source: Optional[str], *, notify: bool = True) -> None:
+    """Log a re-submit on a locked row without touching the row itself.
+    When the athlete changed any answer, staff get an email so the change
+    is not lost in the event list."""
+    changed = {}
+    for key, col in FIELD_MAP.items():
+        if key in payload and payload[key] not in (None, ""):
+            value = _field_value(key, payload[key])
+            # Compare the way intake would store it, so a re-typed school
+            # name or channel label is not reported as a change.
+            if key == "university":
+                value = schools.canonical(value)[0] or value
+            elif key == "campusChannel":
+                value = schools.channel_slug(value, app.university) or value
+            if str(value) != str(getattr(app, col) if getattr(app, col) is not None else ""):
+                changed[col] = value
+    fields = ", ".join(sorted(changed)) or "none"
+    record(db, app, "resubmit_ignored", actor="athlete",
+           detail={"source": source or payload.get("source") or "athlete-signup",
+                   "status": app.status, "changed": changed,
+                   "reason": f"already {app.status}, changes not applied (fields: {fields})"})
+    db.commit()
+    log.info("application %s: re-submit ignored, status %s", app.id, app.status)
+    if changed and notify:
+        lines = "\n".join(f"{col}: {getattr(app, col) or '(blank)'} -> {value}"
+                          for col, value in sorted(changed.items()))
+        summary = (f"{app.first_name or ''} {app.last_name or ''}\n{app.email}\n"
+                   f"Status: {app.status}\n\nRequested changes:\n{lines}")
+        mailer.notify_staff_locked_resubmit(summary, f"{_dashboard_base()}/niltv-onboarding?id={app.id}")
 
 
 def _dashboard_base() -> str:
