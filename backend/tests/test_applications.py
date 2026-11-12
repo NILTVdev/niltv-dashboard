@@ -141,6 +141,49 @@ def test_resubmit_never_resets_status(db, fakes):
     assert db.query(Application).one().status == "agreement_sent"
 
 
+@pytest.mark.parametrize("status", pipeline.LOCKED_STATUSES)
+def test_resubmit_after_approval_changes_nothing(db, fakes, status):
+    client.post("/api/applications/", json=FORM)
+    app = db.query(Application).one()
+    app.status = status
+    db.commit()
+
+    r = client.post("/api/applications/", json={
+        **FORM, "firstName": "Someone", "lastName": "Else", "collegeEmail": "other@school.edu",
+        "phone": "212-555-0199", "instagram": "@someone.else", "university": "Baylor",
+        "consentTerms": False})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["created"] is False and body["updated"] is False and body["id"] == app.id
+
+    db.expire_all()
+    app = db.query(Application).one()
+    assert app.status == status
+    assert (app.first_name, app.last_name) == ("Jane", "Doe")
+    assert app.college_email == "jdoe@duke.edu" and app.phone == "919-555-0100"
+    assert app.instagram == "jane.doe" and app.university == "Duke University"
+    assert app.consent_terms is True and app.submit_count == 1
+    assert app.answers["firstName"] == "Jane"
+    ev = app.events[-1]
+    assert [e.kind for e in app.events] == ["applied", "resubmit_ignored"]
+    assert ev.actor == "athlete" and ev.detail["status"] == status
+    assert ev.detail["changed"]["first_name"] == "Someone"
+    assert ev.detail["changed"]["instagram"] == "someone.else"
+    assert "sport" not in ev.detail["changed"]   # unchanged answers are not listed
+
+
+def test_resubmit_while_declined_still_updates(db, fakes):
+    client.post("/api/applications/", json=FORM)
+    app = db.query(Application).one()
+    app.status = "declined"
+    db.commit()
+    r = client.post("/api/applications/", json={**FORM, "sport": "Field Hockey"})
+    assert "updated" not in r.json()
+    db.expire_all()
+    app = db.query(Application).one()
+    assert app.status == "declined" and app.sport == "Field Hockey" and app.submit_count == 2
+
+
 def test_intake_links_existing_ambassador(db, fakes):
     db.add(Ambassador(ig_username="jane.doe", status="candidate", source="admin"))
     db.commit()
