@@ -118,7 +118,10 @@ async def submit_application(request: Request, db: Session = Depends(get_db)):
         app, created = pipeline.intake(db, payload, ip=ip)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return {"status": "ok", "id": app.id, "created": created}
+    out = {"status": "ok", "id": app.id, "created": created}
+    if not created and app.status in pipeline.LOCKED_STATUSES:
+        out["updated"] = False   # already approved: the answers were logged, not applied
+    return out
 
 
 # -- Webhooks ---------------------------------------------------------------
