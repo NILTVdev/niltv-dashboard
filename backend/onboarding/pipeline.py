@@ -136,7 +136,8 @@ def intake(db: Session, payload: dict, *, ip: Optional[str] = None,
     re-submit changes nothing on it: the agreement, Stripe account and portal
     access were all granted to the identity staff reviewed. The attempt is
     kept as a ``resubmit_ignored`` event listing what the athlete tried to
-    change, so staff can apply a real correction by hand.
+    change. When any answer differs, staff are emailed too (unless
+    ``notify`` is off), so they can apply a real correction by hand.
 
     ``applied_at`` backdates a new row (Google Form backfill); ``notify``
     controls the staff email on create. consent_at is stamped only when the
@@ -148,7 +149,7 @@ def intake(db: Session, payload: dict, *, ip: Optional[str] = None,
 
     app = db.query(Application).filter(Application.email == email).first()
     if app is not None and app.status in LOCKED_STATUSES:
-        _record_ignored_resubmit(db, app, payload, source)
+        _record_ignored_resubmit(db, app, payload, source, notify=notify)
         return app, False
     created = app is None
     if created:
@@ -234,12 +235,20 @@ def _field_value(key: str, value: Any) -> Any:
 
 
 def _record_ignored_resubmit(db: Session, app: Application, payload: dict,
-                             source: Optional[str]) -> None:
-    """Log a re-submit on a locked row without touching the row itself."""
+                             source: Optional[str], *, notify: bool = True) -> None:
+    """Log a re-submit on a locked row without touching the row itself.
+    When the athlete changed any answer, staff get an email so the change
+    is not lost in the event list."""
     changed = {}
     for key, col in FIELD_MAP.items():
         if key in payload and payload[key] not in (None, ""):
             value = _field_value(key, payload[key])
+            # Compare the way intake would store it, so a re-typed school
+            # name or channel label is not reported as a change.
+            if key == "university":
+                value = schools.canonical(value)[0] or value
+            elif key == "campusChannel":
+                value = schools.channel_slug(value, app.university) or value
             if str(value) != str(getattr(app, col) if getattr(app, col) is not None else ""):
                 changed[col] = value
     fields = ", ".join(sorted(changed)) or "none"
@@ -249,6 +258,12 @@ def _record_ignored_resubmit(db: Session, app: Application, payload: dict,
                    "reason": f"already {app.status}, changes not applied (fields: {fields})"})
     db.commit()
     log.info("application %s: re-submit ignored, status %s", app.id, app.status)
+    if changed and notify:
+        lines = "\n".join(f"{col}: {getattr(app, col) or '(blank)'} -> {value}"
+                          for col, value in sorted(changed.items()))
+        summary = (f"{app.first_name or ''} {app.last_name or ''}\n{app.email}\n"
+                   f"Status: {app.status}\n\nRequested changes:\n{lines}")
+        mailer.notify_staff_locked_resubmit(summary, f"{_dashboard_base()}/niltv-onboarding?id={app.id}")
 
 
 def _dashboard_base() -> str:
