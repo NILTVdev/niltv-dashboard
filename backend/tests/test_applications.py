@@ -96,6 +96,7 @@ def fakes(monkeypatch):
     monkeypatch.setattr(mailer, "send_stripe_link", lambda to, name, link: calls["mail"].append((to, link)) or True)
     monkeypatch.setattr(mailer, "send_declined", lambda to, name: calls["declined"].append(to) or True)
     monkeypatch.setattr(mailer, "notify_staff_new_applicant", lambda *a, **k: True)
+    monkeypatch.setattr(mailer, "notify_staff_locked_resubmit", lambda *a, **k: True)
     monkeypatch.setattr(mailer, "send_application_received", lambda *a, **k: True)
     return calls
 
@@ -170,6 +171,30 @@ def test_resubmit_after_approval_changes_nothing(db, fakes, status):
     assert ev.detail["changed"]["first_name"] == "Someone"
     assert ev.detail["changed"]["instagram"] == "someone.else"
     assert "sport" not in ev.detail["changed"]   # unchanged answers are not listed
+    assert body["message"] == apps_router.LOCKED_MESSAGE
+
+
+def test_locked_resubmit_emails_staff_only_when_answers_differ(db, fakes, monkeypatch):
+    staff = []
+    monkeypatch.setattr(mailer, "notify_staff_locked_resubmit",
+                        lambda summary, url: staff.append((summary, url)) or True)
+    client.post("/api/applications/", json=FORM)
+    app = db.query(Application).one()
+    app.status = "accepted"
+    db.commit()
+
+    client.post("/api/applications/", json=FORM)   # same answers: nothing to tell staff
+    assert staff == []
+
+    r = client.post("/api/applications/", json={**FORM, "phone": "212-555-0199"})
+    assert r.json()["updated"] is False
+    assert len(staff) == 1
+    summary, url = staff[0]
+    assert "phone: 919-555-0100 -> 212-555-0199" in summary and "Status: accepted" in summary
+    assert url.endswith(f"/niltv-onboarding?id={app.id}")
+
+    pipeline.intake(db, {**FORM, "phone": "000"}, notify=False)   # backfills stay quiet
+    assert len(staff) == 1
 
 
 def test_resubmit_while_declined_still_updates(db, fakes):

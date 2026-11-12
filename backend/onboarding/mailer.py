@@ -223,3 +223,21 @@ def notify_staff_new_applicant(summary: str, dashboard_url: str) -> bool:
         f'<p style="margin:0"><a href="{html.escape(dashboard_url)}" style="{_BTN}">Review in the dashboard</a></p>'
     )
     return _send(to, "New NIL TV athlete application", text, body)
+
+
+def notify_staff_locked_resubmit(summary: str, dashboard_url: str) -> bool:
+    """An approved athlete sent the form again with different answers.
+    Intake did not apply them, so staff decide what to change by hand."""
+    to = [a.strip() for a in get_settings().applications_notify_email.split(",") if a.strip()]
+    if not to:
+        return False
+    text = ("An approved athlete sent the application again. The changes were not applied.\n\n"
+            f"{summary}\n\nReview: {dashboard_url}\n")
+    body = (
+        '<p style="margin:0 0 12px;font-weight:700">Approved athlete sent changes</p>'
+        '<p style="margin:0 0 12px">The application is past approval, so these changes were not applied. '
+        "Update the row by hand if they are right.</p>"
+        f'<pre style="font-size:13px;line-height:1.5;white-space:pre-wrap;margin:0 0 20px">{html.escape(summary)}</pre>'
+        f'<p style="margin:0"><a href="{html.escape(dashboard_url)}" style="{_BTN}">Review in the dashboard</a></p>'
+    )
+    return _send(to, "NIL TV application: changes not applied", text, body)

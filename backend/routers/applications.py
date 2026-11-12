@@ -47,6 +47,8 @@ _hits: dict[str, deque] = {}
 _MAX_BODY = 64 * 1024
 _HONEYPOT_FIELDS = ("website", "company", "fax")
 UNVERIFIED_EMAIL_MESSAGE = "Confirm your email first, then send the application again."
+LOCKED_MESSAGE = ("Your application is already approved, so we did not change it. "
+                  "To update your details, reach us through the contact page.")
 
 
 # nginx appends the connecting address to X-Forwarded-For, so the trusted value
@@ -121,6 +123,7 @@ async def submit_application(request: Request, db: Session = Depends(get_db)):
     out = {"status": "ok", "id": app.id, "created": created}
     if not created and app.status in pipeline.LOCKED_STATUSES:
         out["updated"] = False   # already approved: the answers were logged, not applied
+        out["message"] = LOCKED_MESSAGE
     return out
 
 
