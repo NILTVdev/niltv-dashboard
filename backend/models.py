@@ -1,7 +1,8 @@
 from sqlalchemy import (
     Column, Index, Integer, Text, Boolean, Numeric, BigInteger,
-    TIMESTAMP, ForeignKey, JSON, UniqueConstraint,
+    TIMESTAMP, Date, ForeignKey, JSON, UniqueConstraint,
 )
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -803,3 +804,87 @@ class ApplicationEvent(Base):
     detail = Column(JSON)
 
     application = relationship("Application", back_populates="events")
+
+
+# ---------------------------------------------------------------------------
+# Athlete Content Hub (migrations 035, 036)
+# ---------------------------------------------------------------------------
+
+class HubAsk(Base):
+    """A content ask staff post for athletes: what to make, by when, and how
+    many athletes may take it. slots NULL = open to all. The website hub lists
+    the 'open' ones; 'draft' is staff-only and 'closed' hides it from new
+    claims while keeping its history."""
+    __tablename__ = "hub_asks"
+    __table_args__ = (
+        Index("idx_hub_asks_status", "status", "due_on"),
+        Index("idx_hub_asks_tags", "tags", postgresql_using="gin"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    title = Column(Text, nullable=False)
+    category = Column(Text)
+    format = Column(Text)                                        # reel, photo set, podcast clip
+    tags = Column(ARRAY(Text), nullable=False, server_default="{}")   # athletes filter the hub by these
+    summary = Column(Text)
+    steps = Column(JSON, nullable=False, server_default="[]")   # ordered list of short strings
+    due_on = Column(Date)                                        # NULL = no deadline
+    slots = Column(Integer)                                      # NULL = open to all athletes
+    status = Column(Text, nullable=False, server_default="open")  # 'draft' | 'open' | 'closed'
+    created_by = Column(Text)
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(TIMESTAMP(timezone=True))
+    closed_at = Column(TIMESTAMP(timezone=True))
+
+    claims = relationship("HubClaim", back_populates="ask", cascade="all, delete-orphan")
+
+
+class HubClaim(Base):
+    """One athlete's hold on one ask. The athlete is the applications row
+    (the site account email is the application email). Unclaiming marks the
+    row 'released' rather than deleting it, so a re-claim reuses it and the
+    history stays. Staff approving a submitted claim moves it to 'approved',
+    which is what admin pays out."""
+    __tablename__ = "hub_claims"
+    __table_args__ = (
+        UniqueConstraint("ask_id", "application_id", name="hub_claims_ask_id_application_id_key"),
+        Index("idx_hub_claims_application", "application_id", "status"),
+        Index("idx_hub_claims_ask", "ask_id", "status"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    ask_id = Column(Integer, ForeignKey("hub_asks.id", ondelete="CASCADE"), nullable=False)
+    application_id = Column(Integer, ForeignKey("applications.id", ondelete="CASCADE"), nullable=False)
+    account_sub = Column(Text)
+    status = Column(Text, nullable=False, server_default="claimed")  # 'claimed' | 'submitted' | 'approved' | 'released'
+    claimed_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+    submitted_at = Column(TIMESTAMP(timezone=True))
+    released_at = Column(TIMESTAMP(timezone=True))
+    reviewed_at = Column(TIMESTAMP(timezone=True))                  # when staff approved the submission
+    reviewed_by = Column(Integer, ForeignKey("dashboard_users.id", ondelete="SET NULL"))
+
+    ask = relationship("HubAsk", back_populates="claims")
+    application = relationship("Application")
+    submissions = relationship(
+        "HubSubmission", back_populates="claim", cascade="all, delete-orphan",
+        order_by="HubSubmission.id",
+    )
+
+
+class HubSubmission(Base):
+    """A link the athlete submitted for a claim, one row per link. A link
+    that a later submission superseded keeps its row with replaced_at set;
+    the current link(s) are the rows where replaced_at is NULL."""
+    __tablename__ = "hub_submissions"
+    __table_args__ = (
+        Index("idx_hub_submissions_claim", "claim_id", "submitted_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    claim_id = Column(Integer, ForeignKey("hub_claims.id", ondelete="CASCADE"), nullable=False)
+    url = Column(Text, nullable=False)
+    note = Column(Text)
+    submitted_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+    replaced_at = Column(TIMESTAMP(timezone=True))
+
+    claim = relationship("HubClaim", back_populates="submissions")

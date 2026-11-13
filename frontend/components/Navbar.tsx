@@ -17,6 +17,7 @@ const LINKS = [
   { href: CAMPUS_CHANNELS, label: "Campus Channels" },
   { href: "/niltv-onboarding", label: "Onboarding" },
   { href: "/community-star", label: "Community Star" },
+  { href: "/content-hub", label: "Content Hub" },
   { href: "/niltv-web-analytics", label: "Web Analytics" },
 ];
 
