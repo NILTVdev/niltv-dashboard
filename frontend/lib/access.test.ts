@@ -23,6 +23,13 @@ describe("canSeePage", () => {
     }
   });
 
+  it("lets every role open the YouTube page", () => {
+    for (const role of ["admin", "general", "demo"] as const) {
+      expect(canSeePage(role, "/niltv-youtube")).toBe(true);
+    }
+    expect(canSeePage("demo", "/niltv-youtube-old")).toBe(false);
+  });
+
   it("keeps admin pages to admins", () => {
     for (const path of ["/niltv-onboarding", "/users", "/adminpage"]) {
       expect(canSeePage("general", path)).toBe(false);

@@ -26,6 +26,7 @@ export const ROLE_LABEL: Record<Role, string> = {
 const AGGREGATE_PAGES = [
   "/niltv",
   "/niltv-channels",
+  "/niltv-youtube",
   CAMPUS_CHANNELS,
   "/niltv-web-analytics",
 ];

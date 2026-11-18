@@ -11,6 +11,9 @@ export const FORMAT_LABELS: Record<string, string> = {
   VIDEO: "Video",
   FEED: "Feed",
   OTHER: "Untyped",
+  // YouTube (network screen): Shorts are uploads of 180 seconds or less.
+  SHORTS: "Shorts",
+  LONG_FORM: "Long-form",
 };
 
 /** Human label for a post_type; unknown/legacy labels render as-is. */
