@@ -22,6 +22,7 @@ from backend import athlete_directory as directory
 from backend.auth import require_api_key
 from backend.database import get_db
 from backend.models import AmbassadorSnapshot, AthleteSnapshot, NiltvNetworkPost
+from backend.routers.library import LibraryItemOut, clips_for_handles
 
 router = APIRouter(dependencies=[Depends(require_api_key)])
 
@@ -141,6 +142,10 @@ class PersonDetailOut(BaseModel):
     person: PersonOut
     history: list[HistoryPoint]
     posts: list[PostOut]
+    # Content library clips that tag one of their Instagram handles, newest
+    # first (at most library.CLIPS_LIMIT); clips_total counts them all.
+    clips: list[LibraryItemOut] = []
+    clips_total: int = 0
     # Admins only. Absent (null) for every other role.
     applications: Optional[list[ApplicationPrivateOut]] = None
 
@@ -280,7 +285,9 @@ def get_person(key: str, request: Request, db: Session = Depends(get_db)):
     person = directory.resolve_key(directory.build_directory(db), key)
     if person is None:
         raise HTTPException(status_code=404, detail="Athlete not found")
-    detail = PersonDetailOut(person=PersonOut(**person), history=_history(db, person), posts=_posts(db, person))
+    clips_total, clips = clips_for_handles(db, person["ig_handles"])
+    detail = PersonDetailOut(person=PersonOut(**person), history=_history(db, person), posts=_posts(db, person),
+                             clips=clips, clips_total=clips_total)
     if is_admin(request):
         detail.applications = [ApplicationPrivateOut(**a) for a in directory.private_details(db, person)]
     return detail

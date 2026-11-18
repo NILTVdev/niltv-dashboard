@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   NO_FILTERS,
   activeFilterCount,
+  athleteHref,
   athleteLabel,
   effectiveSort,
   fmtDuration,
@@ -134,5 +135,15 @@ describe("sync status line", () => {
     expect(relativeTime("2026-11-18T14:59:40Z", NOW)).toBe("just now");
     expect(relativeTime("2026-11-18T14:59:00Z", NOW)).toBe("1 minute ago");
     expect(relativeTime("2026-11-16T15:00:00Z", NOW)).toBe("2 days ago");
+  });
+});
+
+describe("athleteHref", () => {
+  it("links an athlete the directory knows to their page", () => {
+    expect(athleteHref({ id: "a1", name: "Sample", handle: "sample", directory_key: "amb-12" })).toBe("/athletes/amb-12");
+  });
+  it("gives no link when the directory has no match", () => {
+    expect(athleteHref({ id: "a1", name: "Sample", handle: "sample", directory_key: null })).toBeNull();
+    expect(athleteHref({ id: "a1", name: "Sample", handle: "sample" })).toBeNull();
   });
 });

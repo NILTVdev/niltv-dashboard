@@ -185,7 +185,8 @@ def test_sync_strips_nul_characters_instead_of_failing(db):
     got = client.get(f"/api/library/{ig(1)}", headers=KEY).json()
     assert got["caption"] == "bad  nul"
     assert got["keywords"] == ["hoops"]
-    assert got["athletes"][0] == {"id": "ath-nul", "name": "Nul Sample", "handle": "nul_sample"}
+    assert got["athletes"][0] == {"id": "ath-nul", "name": "Nul Sample", "handle": "nul_sample",
+                                  "directory_key": None}
 
 
 def test_sync_ignores_unknown_fields_and_reads_null_lists_as_empty(db):
@@ -296,7 +297,9 @@ def test_detail_and_404(seeded):
     r = client.get(f"/api/library/{ig(1)}", headers=KEY)
     assert r.status_code == 200
     body = r.json()
-    assert body["athletes"] == [{"id": "ath-test-001", "name": "Jordan Sample", "handle": "jsample_hoops"}]
+    # No directory person has that handle, so no Athletes page link.
+    assert body["athletes"] == [{"id": "ath-test-001", "name": "Jordan Sample", "handle": "jsample_hoops",
+                                 "directory_key": None}]
     assert body["performance"]["views"] == 12000
     assert client.get("/api/library/no-such-clip", headers=KEY).status_code == 404
 

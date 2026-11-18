@@ -92,6 +92,11 @@ export function tagChips(item: LibraryItem): string[] {
   return out;
 }
 
+/** The athlete's directory page, when the directory knows their handle. */
+export function athleteHref(a: LibraryAthlete): string | null {
+  return a.directory_key ? `/athletes/${encodeURIComponent(a.directory_key)}` : null;
+}
+
 export function athleteLabel(a: LibraryAthlete): string {
   if (a.name) return a.name;
   if (a.handle) return `@${a.handle.replace(/^@/, "")}`;

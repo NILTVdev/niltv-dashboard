@@ -13,6 +13,12 @@ export const PAGE_SIZE = 50;
 
 export const personPath = (key: string) => `${DIRECTORY_PATH}/${encodeURIComponent(key)}`;
 
+/** Card title for the library clips on an athlete page. */
+export function clipsTitle(shown: number, total: number): string {
+  if (!total) return "Library clips";
+  return shown < total ? `Library clips (newest ${shown} of ${fmt(total)})` : `Library clips (${fmt(total)})`;
+}
+
 export const STATUS_LABEL: Record<DirectoryStatus, string> = {
   ambassador_confirmed: "Ambassador",
   roster: "Roster",

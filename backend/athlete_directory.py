@@ -432,6 +432,12 @@ def _person(athletes: list[dict], ambassadors: list[dict], applications: list[di
 
     collab_posts, collab_views, collab_engagement = _collab_stats(ambassadors, ig_handle, records)
 
+    # Every Instagram handle on any of their records, the main one first. Used
+    # to find their clips in the content library; not part of PersonOut.
+    ig_handles = list(dict.fromkeys(h for h in (
+        ig_handle, *(h for m in ambassadors for h in m.get("_igs", ())),
+        *(r.get("_ig") for r in (*athletes, *applications))) if h))
+
     created = [r.get("created_at") for r in (*athletes, *ambassadors, *applications) if r.get("created_at")]
     pulled = [r.get("cached_last_pulled") for r in (*athletes, *ambassadors) if r.get("cached_last_pulled")]
     app_dates = [r.get("created_at") for r in applications if r.get("created_at")]
@@ -454,6 +460,7 @@ def _person(athletes: list[dict], ambassadors: list[dict], applications: list[di
         "status": _status(athletes, ambassadors),
         "application_status": _clean(p0.get("status")),
         "ig_handle": ig_handle,
+        "ig_handles": ig_handles,
         "followers": followers,
         "followers_source": followers_source,
         "followers_as_of": followers_as_of,
@@ -520,6 +527,20 @@ def resolve_key(people: list[dict], key: str) -> Optional[dict]:
         if p["key"] == key or key in p["member_keys"]:
             return p
     return None
+
+
+def keys_by_handle(people: list[dict]) -> dict[str, str]:
+    """Normalized Instagram handle -> person key. A person's main handle wins
+    over a handle someone else used before (a previous username or an old
+    signup), so a handle that changed owners points at its current owner."""
+    out: dict[str, str] = {}
+    for p in people:
+        if p["ig_handle"]:
+            out.setdefault(p["ig_handle"], p["key"])
+    for p in people:
+        for h in p.get("ig_handles", ()):
+            out.setdefault(h, p["key"])
+    return out
 
 
 # ── Search, filters, sort ─────────────────────────────────────────────────────

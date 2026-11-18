@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { ExternalLink, Eye, Film, Search, Tag, X } from "lucide-react";
 import type { LibraryFacetKey, LibraryFacets, LibraryItem, LibraryPage, LibraryStatus } from "@/lib/types";
 import {
   FACETS, NO_FILTERS, PAGE_SIZE, SORTS,
-  activeFilterCount, athleteLabel, effectiveSort, fmtDuration, libraryQuery,
+  activeFilterCount, athleteHref, athleteLabel, effectiveSort, fmtDuration, libraryQuery,
   needsTagging, qcLabel, syncStatusLine, tagChips,
   type LibraryFilters, type LibrarySort,
 } from "@/lib/library";
@@ -265,7 +266,7 @@ function Toggle({ on, onClick, children }: { on: boolean; onClick: () => void; c
   );
 }
 
-function Poster({ item, className }: { item: LibraryItem; className?: string }) {
+export function Poster({ item, className }: { item: LibraryItem; className?: string }) {
   if (!item.poster_url) {
     return (
       <div className={cn("flex items-center justify-center bg-gradient-to-b from-[#1c1c22] to-[var(--brand)]", className)}>
@@ -438,7 +439,11 @@ function ClipDrawer({ item, onClose }: { item: LibraryItem; onClose: () => void 
               <ul className="flex flex-col gap-1 text-sm text-[#0f172a]">
                 {item.athletes.map((a, i) => (
                   <li key={a.id ?? a.handle ?? i} className="break-words">
-                    {athleteLabel(a)}
+                    {athleteHref(a) ? (
+                      <Link href={athleteHref(a)!} className="font-medium text-[var(--brand)] underline-offset-2 hover:underline">
+                        {athleteLabel(a)}
+                      </Link>
+                    ) : athleteLabel(a)}
                     {a.name && a.handle && <span className="text-[#64748b]"> @{a.handle.replace(/^@/, "")}</span>}
                   </li>
                 ))}

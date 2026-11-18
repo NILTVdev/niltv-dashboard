@@ -24,6 +24,7 @@ from sqlalchemy import func, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+from backend import athlete_directory as directory
 from backend.auth import require_api_key
 from backend.database import SessionLocal, get_db
 from backend.models import LibraryItem, LibrarySyncRun
@@ -208,6 +209,9 @@ class Athlete(BaseModel):
     id: Optional[str] = None
     name: Optional[str] = None
     handle: Optional[str] = None
+    # The Athletes page key (/athletes/{key}) of the person with this
+    # Instagram handle, when the athlete directory has one.
+    directory_key: Optional[str] = None
 
 
 class LibraryItemOut(BaseModel):
@@ -271,6 +275,45 @@ def _item(row) -> LibraryItemOut:
     perf = {k[5:]: m.pop(k) for k in list(m) if k.startswith("perf_")}
     m.pop("rank", None)
     return LibraryItemOut(**m, performance=Performance(**perf))
+
+
+def link_athletes(db: Session, items: list[LibraryItemOut]) -> list[LibraryItemOut]:
+    """Set directory_key on each tagged athlete whose handle belongs to a
+    person in the athlete directory (built once per process, cached)."""
+    if not any(a.handle for it in items for a in it.athletes):
+        return items
+    keys = directory.keys_by_handle(directory.build_directory(db))
+    for it in items:
+        for a in it.athletes:
+            h = directory.normalize_handle(a.handle)
+            a.directory_key = keys.get(h) if h else None
+    return items
+
+
+CLIPS_LIMIT = 24
+
+# A clip features a handle when an athlete tagged on it, or a handle the app
+# could not match to one of its athletes, is that handle.
+_FEATURES_HANDLES = """(
+    EXISTS (SELECT 1 FROM jsonb_array_elements(li.athletes) a
+            WHERE lower(ltrim(a->>'handle', '@')) = ANY(:handles))
+    OR EXISTS (SELECT 1 FROM unnest(li.unresolved_handles) u
+               WHERE lower(ltrim(u, '@')) = ANY(:handles)))"""
+
+
+def clips_for_handles(db: Session, handles: list[str], limit: int = CLIPS_LIMIT) -> tuple[int, list[LibraryItemOut]]:
+    """Library clips (not removed) featuring any of these normalized
+    Instagram handles, newest first: (total, first ``limit``)."""
+    if not handles:
+        return 0, []
+    params = {"handles": list(handles), "limit": limit}
+    where = f"WHERE NOT li.removed AND {_FEATURES_HANDLES}"
+    total = db.execute(text(f"SELECT COUNT(*) FROM library_items li {where}"), params).scalar()
+    rows = db.execute(text(f"""
+        SELECT {_FIELDS} {_FROM} {where}
+        ORDER BY li.posted_at DESC NULLS LAST, li.content_id LIMIT :limit
+    """), params).fetchall()
+    return total, [_item(r) for r in rows]
 
 
 _WEBSEARCH_OPERATORS = re.compile(r'"|(?:^|\s)-\S|\bor\b', re.IGNORECASE)
@@ -403,7 +446,8 @@ def list_library(
         ORDER BY {order}, posted_at DESC NULLS LAST, content_id
         LIMIT :limit OFFSET :offset
     """), {**params, "limit": limit, "offset": offset}).fetchall()
-    return LibraryPage(total=total, limit=limit, offset=offset, items=[_item(r) for r in rows])
+    return LibraryPage(total=total, limit=limit, offset=offset,
+                       items=link_athletes(db, [_item(r) for r in rows]))
 
 
 class FacetValue(BaseModel):
@@ -507,4 +551,4 @@ def get_library_item(content_id: str, db: Session = Depends(get_db)):
     row = db.execute(text(f"SELECT {_FIELDS} {_FROM} WHERE li.content_id = :cid"), {"cid": content_id}).first()
     if row is None:
         raise HTTPException(status_code=404, detail="Clip not found")
-    return _item(row)
+    return link_athletes(db, [_item(row)])[0]

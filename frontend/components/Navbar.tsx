@@ -45,6 +45,20 @@ export default function Navbar() {
       ?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [pathname, me]);
 
+  // The scrollbar is hidden, so a mouse wheel over the links scrolls them
+  // sideways when they do not all fit (a laptop with every link showing).
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const onWheel = (e: WheelEvent) => {
+      if (nav.scrollWidth <= nav.clientWidth || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      e.preventDefault();
+      nav.scrollLeft += e.deltaY;
+    };
+    nav.addEventListener("wheel", onWheel, { passive: false });
+    return () => nav.removeEventListener("wheel", onWheel);
+  }, [me]);
+
   if (pathname === "/login") return null;
 
   const links = me ? LINKS.filter((l) => canSeePage(me.role, l.href)) : [];

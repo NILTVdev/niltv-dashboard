@@ -982,6 +982,9 @@ export interface DirectoryDetail {
   person: DirectoryPerson;
   history: DirectoryHistoryPoint[];
   posts: DirectoryPost[];
+  /** Library clips that tag one of their Instagram handles, newest first. */
+  clips: LibraryItem[];
+  clips_total: number;
   applications: DirectoryApplication[] | null;
 }
 
@@ -991,6 +994,8 @@ export interface LibraryAthlete {
   id: string | null;
   name: string | null;
   handle: string | null;
+  /** Athletes page key (/athletes/{key}) when the directory knows this handle. */
+  directory_key?: string | null;
 }
 
 /** Instagram numbers joined by media id. null = not known, never 0. */

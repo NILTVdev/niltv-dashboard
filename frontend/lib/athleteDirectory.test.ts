@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  EMPTY_FILTERS, PAGE_SIZE, activeFilterCount, answerRows, filtersFromParams, filtersToApiQuery,
+  EMPTY_FILTERS, PAGE_SIZE, activeFilterCount, answerRows, clipsTitle, filtersFromParams, filtersToApiQuery,
   filtersToPageQuery, followerLabel, humanize, initials, personPath, resultRange, socialUrl, toGridPost,
 } from "./athleteDirectory";
 import type { DirectoryPost } from "./types";
@@ -107,5 +107,13 @@ describe("toGridPost", () => {
   it("maps counts and ids", () => {
     const p = toGridPost(base, 4);
     expect(p).toMatchObject({ id: 4, ig_post_id: "p1", like_count: 2, comment_count: 1, caption: "Caption" });
+  });
+});
+
+describe("clipsTitle", () => {
+  it("names the count, and says when only the newest are shown", () => {
+    expect(clipsTitle(0, 0)).toBe("Library clips");
+    expect(clipsTitle(3, 3)).toBe("Library clips (3)");
+    expect(clipsTitle(24, 1500)).toBe("Library clips (newest 24 of 1.5K)");
   });
 });

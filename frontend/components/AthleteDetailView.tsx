@@ -1,13 +1,17 @@
 import type { ReactNode } from "react";
-import { Lock } from "lucide-react";
+import Link from "next/link";
+import { ExternalLink, Eye, Lock } from "lucide-react";
 import FollowerChart from "./FollowerChart";
 import PostsGrid from "./PostsGrid";
 import AthleteAvatar from "./AthleteAvatar";
 import { SelfReported, StatusBadge } from "./AthleteDirectoryView";
 import InstagramIcon from "./icons/InstagramIcon";
 import { fmt, fmtDate } from "@/lib/utils";
-import { answerRows, socialUrl } from "@/lib/athleteDirectory";
-import type { DirectoryApplication, DirectoryDetail, DirectorySource, Post } from "@/lib/types";
+import { Poster } from "./LibraryView";
+import { answerRows, clipsTitle, socialUrl } from "@/lib/athleteDirectory";
+import { LIBRARY } from "@/lib/access";
+import { qcLabel } from "@/lib/library";
+import type { DirectoryApplication, DirectoryDetail, DirectorySource, LibraryItem, Post } from "@/lib/types";
 
 interface Props {
   detail: DirectoryDetail;
@@ -112,8 +116,36 @@ function ApplicationPanel({ a }: { a: DirectoryApplication }) {
   );
 }
 
+function ClipRow({ item }: { item: LibraryItem }) {
+  const views = item.performance.views;
+  const link = item.performance.permalink;
+  return (
+    <li className="flex min-w-0 gap-3">
+      <Poster item={item} className="h-20 w-[45px] shrink-0 rounded-md" />
+      <div className="min-w-0 flex-1">
+        <p className="break-words text-sm font-medium text-[#0f172a]">{item.title || "Untitled clip"}</p>
+        <p className="mt-0.5 text-xs text-[#64748b]">
+          {[item.channel_name, item.posted_at ? fmtDate(item.posted_at) : null, qcLabel(item.qc_state)]
+            .filter(Boolean).join(" · ")}
+        </p>
+        <p className="mt-1 flex flex-wrap items-center gap-3 text-xs text-[#64748b]">
+          <span className="inline-flex items-center gap-1"><Eye size={12} /> {views == null ? "No views yet" : fmt(views)}</span>
+          {link && (
+            <a href={link} target="_blank" rel="noopener noreferrer"
+               className="inline-flex items-center gap-1 hover:text-[var(--brand)]">
+              <ExternalLink size={12} /> Instagram
+            </a>
+          )}
+        </p>
+      </div>
+    </li>
+  );
+}
+
 export default function AthleteDetailView({ detail, gridPosts }: Props) {
   const { person: p, history, posts, applications } = detail;
+  const clips = detail.clips ?? [];
+  const clipsTotal = detail.clips_total ?? clips.length;
   const igHistory = history.flatMap((h) =>
     h.source !== "reported" && h.ig_followers != null && h.pulled_at
       ? [{ pulled_at: h.pulled_at, ig_followers: h.ig_followers }]
@@ -201,6 +233,19 @@ export default function AthleteDetailView({ detail, gridPosts }: Props) {
 
       <Card title={`NIL TV posts${posts.length ? ` (${posts.length}, ${fmt(totalViews)} views)` : ""}`}>
         <PostsGrid posts={gridPosts} />
+      </Card>
+
+      <Card title={clipsTitle(clips.length, clipsTotal)}>
+        {clips.length ? (
+          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {clips.map((c) => <ClipRow key={c.content_id} item={c} />)}
+          </ul>
+        ) : (
+          <p className="text-sm text-[#94a3b8]">
+            No clips in the <Link href={LIBRARY} className="underline underline-offset-2">Library</Link> tag
+            {p.ig_handle ? ` @${p.ig_handle}` : " this athlete"}.
+          </p>
+        )}
       </Card>
 
       {applications && (
