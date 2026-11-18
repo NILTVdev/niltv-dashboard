@@ -674,7 +674,16 @@ def network_screen_summary(
         PlatformSummary(platform="snapchat", available=False),
         PlatformSummary(platform="linkedin", available=False),
     ]
-    live = [p.current_month for p in platforms if p.available and p.current_month]
+    # A platform counts toward the banner only when it has data for the
+    # period. Instagram keeps its original rule (always counted). Other
+    # platforms need a follower number for the period: a YouTube channel with
+    # no snapshot by the period's end is unknown, not zero, so it stays out of
+    # both the sums and platforms_live.
+    live = [
+        p.current_month for p in platforms
+        if p.available and p.current_month
+        and (p.platform == "instagram" or p.current_month.followers is not None)
+    ]
 
     # Sums across live platforms: Instagram followers + YouTube subscribers,
     # views on posts published in the period, posts published in the period.

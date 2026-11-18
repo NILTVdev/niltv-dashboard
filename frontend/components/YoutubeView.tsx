@@ -281,7 +281,7 @@ function AnalyticsSection({ analytics }: { analytics: YoutubeAnalytics | null })
   if (!t || !daily.length) {
     return <Section title="Watch Time and Retention"><Empty>Connected. The first nightly pull fills this section.</Empty></Section>;
   }
-  const chart = daily.slice(-28).map((d) => ({ day: fmtDate(d.day), hours: d.watch_hours ?? 0 }));
+  const chart = daily.slice(-28).map((d) => ({ day: fmtDate(d.day), hours: d.watch_hours }));
   const top = analytics.top_videos ?? [];
   const period = t.start && t.end ? `${fmtDate(t.start)} to ${fmtDate(t.end)}` : "Last 28 days";
   return (

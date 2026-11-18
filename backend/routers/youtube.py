@@ -23,7 +23,7 @@ from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import func, or_
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 
 from backend.auth import require_api_key
@@ -197,8 +197,9 @@ class AnalyticsTotals(BaseModel):
     days: int
     start: Optional[date]
     end: Optional[date]
-    views: int
-    watch_hours: float
+    # Sums over the days that report the metric; null when none do.
+    views: Optional[int]
+    watch_hours: Optional[float]
     # View-weighted means of the daily values.
     average_view_duration_sec: Optional[int]
     average_view_percentage: Optional[float]
@@ -289,10 +290,14 @@ def youtube_videos(
     db: Session = Depends(get_db),
 ):
     # Days since publish, never under one, so a video from this morning is
-    # not divided by a fraction of a day.
+    # not divided by a fraction of a day. No publish date means no rate:
+    # Postgres GREATEST skips NULLs, so the NULL case is spelled out.
     age_days = func.greatest(
         func.extract("epoch", func.now() - YoutubeVideo.published_at) / 86400.0, 1.0)
-    per_day = YoutubeVideo.views / age_days
+    per_day = case(
+        (YoutubeVideo.published_at.is_(None), None),
+        else_=YoutubeVideo.views / age_days,
+    )
 
     query = db.query(YoutubeVideo, per_day.label("views_per_day"))
     if channel_id:
@@ -370,14 +375,17 @@ def youtube_analytics(db: Session = Depends(get_db)):
     window = [d for d in daily if d.day > end - timedelta(days=ANALYTICS_WINDOW)]
     gained = [d.subscribers_gained for d in window if d.subscribers_gained is not None]
     lost = [d.subscribers_lost for d in window if d.subscribers_lost is not None]
+    known_views = [d.views for d in window if d.views is not None]
+    known_minutes = [d.estimated_minutes_watched for d in window
+                     if d.estimated_minutes_watched is not None]
     avg_dur = _weighted(window, "average_view_duration_sec")
     avg_pct = _weighted(window, "average_view_percentage")
     totals = AnalyticsTotals(
         days=len(window),
         start=window[0].day if window else None,
         end=end,
-        views=sum(d.views or 0 for d in window),
-        watch_hours=round(sum(d.estimated_minutes_watched or 0 for d in window) / 60, 1),
+        views=sum(known_views) if known_views else None,
+        watch_hours=round(sum(known_minutes) / 60, 1) if known_minutes else None,
         average_view_duration_sec=round(avg_dur) if avg_dur is not None else None,
         average_view_percentage=round(avg_pct, 1) if avg_pct is not None else None,
         subscribers_net=(sum(gained) - sum(lost)) if gained and lost else None,

@@ -497,8 +497,8 @@ export interface YoutubeAnalyticsTotals {
   days: number;
   start: string | null;
   end: string | null;
-  views: number;
-  watch_hours: number;
+  views: number | null;
+  watch_hours: number | null;
   average_view_duration_sec: number | null;
   average_view_percentage: number | null;
   subscribers_net: number | null;

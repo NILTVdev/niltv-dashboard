@@ -347,6 +347,22 @@ def test_videos_sort_filter_search_and_paging():
     assert first["views_per_day"] == pytest.approx(100, abs=1)
 
 
+def test_views_per_day_is_null_without_publish_date():
+    _seed_videos()
+    db = SessionLocal()
+    try:
+        db.add(YoutubeVideo(video_id="no_date", channel_id=CH, title="Undated upload",
+                            is_short=False, duration_sec=600, views=50_000, published_at=None))
+        db.commit()
+    finally:
+        db.close()
+    # No publish date means no rate, so it sorts last instead of first.
+    assert _ids(sort="views_per_day") == ["new_short", "old_long", "mid_short", "no_date"]
+    items = client.get("/api/youtube/videos", headers=AUTH,
+                       params={"sort": "views_per_day"}).json()["items"]
+    assert items[-1]["views_per_day"] is None
+
+
 # ── /api/youtube/status and analytics ────────────────────────────────────────
 
 def test_status_reports_configuration(monkeypatch):
@@ -431,6 +447,25 @@ def test_analytics_job_and_route(monkeypatch):
     assert body["top_videos"][0]["watch_hours"] == 30.0
 
 
+def test_analytics_unknown_days_stay_null(monkeypatch):
+    _configure_oauth(monkeypatch)
+    db = SessionLocal()
+    try:
+        db.add_all([
+            YoutubeDailyAnalytics(channel_id=CH, day=date(2026, 11, 1), views=None,
+                                  estimated_minutes_watched=None),
+            YoutubeDailyAnalytics(channel_id=CH, day=date(2026, 11, 2), views=None,
+                                  estimated_minutes_watched=None),
+        ])
+        db.commit()
+    finally:
+        db.close()
+    body = client.get("/api/youtube/analytics", headers=AUTH).json()
+    assert [d["watch_hours"] for d in body["daily"]] == [None, None]
+    t = body["totals_28d"]
+    assert t["views"] is None and t["watch_hours"] is None
+
+
 # ── Network screen ───────────────────────────────────────────────────────────
 
 def _platform(summary: dict, name: str) -> dict:
@@ -465,6 +500,12 @@ def test_network_screen_youtube_card():
         assert cur["collab_data_warning"] is False
         assert body["aggregate"]["platforms_live"] == 2
         assert body["aggregate"]["total_followers"] == 1500
+
+        # The previous month has no YouTube snapshot: YouTube is unknown for
+        # that period, so the banner leaves it out instead of adding a zero.
+        body = client.get("/api/network-screen/summary?mode=prevmonth", headers=AUTH).json()
+        assert _platform(body, "youtube")["current_month"]["followers"] is None
+        assert body["aggregate"]["platforms_live"] == 1
     finally:
         db = SessionLocal()
         try:
