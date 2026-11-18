@@ -176,6 +176,10 @@ Copy `.env.example` to `.env`
 | `AWS_SNS_TOPIC_ARN` | SNS topic ARN for failure email alerts |
 | `DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD` | Dashboard login (password also acts as the API key) |
 
+| `YOUTUBE_API_KEY` | YouTube Data API v3 key (public counts). Empty = the YouTube job does nothing |
+| `YOUTUBE_CHANNEL_IDS` | Channels to track, comma-separated. Empty = the NIL TV channel |
+| `YOUTUBE_OAUTH_CLIENT_ID` / `YOUTUBE_OAUTH_CLIENT_SECRET` / `YOUTUBE_OAUTH_REFRESH_TOKEN` | YouTube Analytics (watch time, retention). See [YouTube](#youtube) |
+
 Frontend-only contributors don't need the third-party tokens — placeholder values
 are fine to boot a local backend if you aren't exercising that integration.
 
@@ -199,7 +203,42 @@ it does not.
 | GET | `/api/zoomph` | Zoomph posts (filter with `?platform=Instagram`) |
 | GET | `/api/zoomph/summary` | Aggregated stats by platform |
 
+| GET | `/api/youtube/summary` | YouTube channel totals, 7-day / 28-day / month changes, daily series |
+| GET | `/api/youtube/videos` | YouTube uploads (`sort`, `order`, `format=all\|shorts\|long`, `q`, `page`) |
+| GET | `/api/youtube/status` | Is YouTube configured, last pull, is Analytics connected |
+| GET | `/api/youtube/analytics` | Watch time and retention, or `{"connected": false}` |
+
 Interactive docs: `http://localhost:8000/docs` on the local stack.
+
+---
+
+## YouTube
+
+Two stages, both nightly on the production checkout.
+
+**Public counts** (`backend.jobs.run_youtube`, 05:25 UTC). Needs only
+`YOUTUBE_API_KEY`. Saves each channel's subscribers, total views and video
+count once per UTC day, and every upload with its views, likes and comments.
+Costs about `1 + 2 × ceil(uploads / 50)` quota units per channel. A video
+counts as a Short when it runs 180 seconds or less: the API does not report
+Shorts or aspect ratio, so this is a duration rule. Changes over 7 days, 28
+days or a month need a snapshot at both ends, so they show once a few weeks
+of nightly pulls exist.
+
+**Watch time and retention** (`backend.jobs.run_youtube_analytics`, 05:40
+UTC). Needs the channel owner to approve read-only access once:
+
+1. In the Google Cloud project that holds the API key, enable the
+   **YouTube Analytics API** and create an OAuth client of type
+   **Desktop app**. Publish the consent screen (Testing mode expires refresh
+   tokens after 7 days).
+2. On a laptop with a browser, run
+   `YOUTUBE_OAUTH_CLIENT_ID=... YOUTUBE_OAUTH_CLIENT_SECRET=... python -m scripts.youtube_oauth`.
+3. The channel owner signs in with the Google account that owns the channel
+   and approves. The script prints `YOUTUBE_OAUTH_REFRESH_TOKEN=...`.
+4. Put the client id, client secret and refresh token in the server `.env`.
+   The next nightly run connects. Until then the dashboard shows a
+   Not connected panel and the job exits without doing anything.
 
 ---
 

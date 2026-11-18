@@ -107,6 +107,8 @@ jobs:
               "7-59/15 * * * * $WRAPPER backend.jobs.export_community_star_sheet" \
               "30 6 * * * $WRAPPER backend.jobs.reconcile_applications" \
               "45 5 * * * $WRAPPER backend.jobs.run_manual_channels" \
+              "25 5 * * * $WRAPPER backend.jobs.run_youtube" \
+              "40 5 * * * $WRAPPER backend.jobs.run_youtube_analytics" \
               "0 0 2 * * $WRAPPER backend.jobs.refresh_brand_ig_token" \
               | crontab -
 
