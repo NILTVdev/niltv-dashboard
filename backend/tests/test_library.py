@@ -175,6 +175,19 @@ def test_sync_refuses_non_json(db):
     assert client.post(SYNC, headers=KEY, json=[1, 2]).status_code == 400
 
 
+def test_sync_strips_nul_characters_instead_of_failing(db):
+    body = snapshot()
+    item = body["items"][0]
+    item["caption"] = "bad \u0000 nul"
+    item["keywords"] = ["hoops\u0000"]
+    item["athletes"] = [{"id": "ath-nul", "name": "Nul\u0000 Sample", "handle": "nul_\u0000sample"}]
+    assert sync(body)["upserted"] == len(FIXTURE["items"])
+    got = client.get(f"/api/library/{ig(1)}", headers=KEY).json()
+    assert got["caption"] == "bad  nul"
+    assert got["keywords"] == ["hoops"]
+    assert got["athletes"][0] == {"id": "ath-nul", "name": "Nul Sample", "handle": "nul_sample"}
+
+
 def test_sync_ignores_unknown_fields_and_reads_null_lists_as_empty(db):
     body = snapshot(extra_top_level="ignored")
     body["items"][0]["future_field"] = {"anything": 1}
@@ -196,6 +209,29 @@ def test_partial_words_match_by_prefix(seeded):
     assert set(ids({"q": "basketb"})) >= {ig(1), ig(2), ig(3)}
     assert set(ids({"q": "jsampl"})) == {ig(1), ig(3)}  # athlete handle
     assert set(ids({"q": "Volleyb capt"})) == {"yt-sample-video-04"}
+
+
+def test_websearch_exclusion_and_phrases_are_not_widened_by_prefix(seeded):
+    everything = set(ids())
+    basketball = set(ids({"q": "basketball"}))
+    assert basketball and basketball < everything
+    excluded = set(ids({"q": "-basketball"}))
+    assert excluded == everything - basketball
+    assert set(ids({"q": "games -basketball"})).isdisjoint(basketball)
+    # A quoted phrase is matched as a phrase, not as an AND of word prefixes.
+    assert ids({"q": '"basketb"'}) == []
+
+
+def test_prefix_tsquery_skips_websearch_syntax():
+    from backend.routers.library import prefix_tsquery
+    assert prefix_tsquery("Duke basketb") == "duke:* & basketb:*"
+    assert prefix_tsquery("x-ray drills") == "x:* & ray:* & drills:*"
+    assert prefix_tsquery("-basketball") is None
+    assert prefix_tsquery("duke -lacrosse") is None
+    assert prefix_tsquery('"camp day"') is None
+    assert prefix_tsquery("duke or unc") is None
+    assert prefix_tsquery("orange") == "orange:*"
+    assert prefix_tsquery("!!!") is None
 
 
 def test_search_covers_stems_athletes_tags_and_unresolved_handles(seeded):

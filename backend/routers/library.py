@@ -19,7 +19,7 @@ from datetime import date, datetime, timedelta
 from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from sqlalchemy import func, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
@@ -36,6 +36,19 @@ READY = "ready"
 
 
 # ── Sync contract ─────────────────────────────────────────────────────────────
+
+def strip_nul(v):
+    """Drop NUL characters from every string in v (nested lists and dicts too).
+    JSON allows a \\u0000 escape but Postgres text cannot store it, and one bad caption
+    must not fail the whole snapshot."""
+    if isinstance(v, str):
+        return v.replace("\x00", "")
+    if isinstance(v, list):
+        return [strip_nul(x) for x in v]
+    if isinstance(v, dict):
+        return {k: strip_nul(x) for k, x in v.items()}
+    return v
+
 
 class SyncAthlete(BaseModel):
     model_config = ConfigDict(extra="ignore", coerce_numbers_to_str=True)
@@ -72,6 +85,11 @@ class SyncItem(BaseModel):
     duration_sec: Optional[float] = None
     posted_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _strip_nul(cls, v):
+        return strip_nul(v)
 
     # The contract sends [] for empty lists; a null is read as [] rather than
     # refusing the whole snapshot over one field.
@@ -255,9 +273,16 @@ def _item(row) -> LibraryItemOut:
     return LibraryItemOut(**m, performance=Performance(**perf))
 
 
+_WEBSEARCH_OPERATORS = re.compile(r'"|(?:^|\s)-\S|\bor\b', re.IGNORECASE)
+
+
 def prefix_tsquery(q: str) -> Optional[str]:
     """'Duke basketb' -> 'duke:* & basketb:*' for to_tsquery('simple', ...), so a
-    partly typed word still matches. None when q has no word characters."""
+    partly typed word still matches. None when q has no word characters, or
+    when q uses websearch syntax (-word, "phrase", or): the prefix form would
+    drop the exclusion or phrase and widen the match."""
+    if _WEBSEARCH_OPERATORS.search(q):
+        return None
     words = re.findall(r"[^\W_]+", q.lower())
     return " & ".join(f"{w}:*" for w in words) if words else None
 

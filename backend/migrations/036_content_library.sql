@@ -13,38 +13,42 @@
 --
 -- library_sync_runs: one row per sync call, ok or not, for the status line.
 --
+-- The helper functions call each other schema-qualified (public.). pg_dump
+-- restores with an empty search_path and inlines library_search_vector while it
+-- creates library_items, so an unqualified call would fail the restore.
+--
 -- Applied automatically by scripts/migrate.py on deploy.
 
-CREATE OR REPLACE FUNCTION library_tsv(doc TEXT, weight "char")
+CREATE OR REPLACE FUNCTION public.library_tsv(doc TEXT, weight "char")
 RETURNS tsvector LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
     SELECT setweight(to_tsvector('english'::regconfig, COALESCE(doc, ''))
                      || to_tsvector('simple'::regconfig, COALESCE(doc, '')), weight)
 $$;
 
-CREATE OR REPLACE FUNCTION library_join(parts TEXT[])
+CREATE OR REPLACE FUNCTION public.library_join(parts TEXT[])
 RETURNS TEXT LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
     SELECT COALESCE(array_to_string(parts, ' '), '')
 $$;
 
 -- Athlete names and handles from the athletes jsonb array.
-CREATE OR REPLACE FUNCTION library_athlete_text(athletes JSONB)
+CREATE OR REPLACE FUNCTION public.library_athlete_text(athletes JSONB)
 RETURNS TEXT LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
     SELECT COALESCE(string_agg(COALESCE(a->>'name', '') || ' ' || COALESCE(a->>'handle', ''), ' '), '')
     FROM jsonb_array_elements(
         CASE WHEN jsonb_typeof(athletes) = 'array' THEN athletes ELSE '[]'::jsonb END) AS a
 $$;
 
-CREATE OR REPLACE FUNCTION library_search_vector(
+CREATE OR REPLACE FUNCTION public.library_search_vector(
     title TEXT, caption TEXT, summary TEXT, keywords TEXT[],
     sport TEXT, school TEXT, content_type TEXT, content_types TEXT[],
     categories TEXT[], sponsor TEXT, athletes JSONB, unresolved_handles TEXT[])
 RETURNS tsvector LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
-    SELECT library_tsv(title, 'A')
-        || library_tsv(library_athlete_text(athletes) || ' ' || library_join(unresolved_handles), 'A')
-        || library_tsv(library_join(keywords) || ' ' || COALESCE(summary, ''), 'B')
-        || library_tsv(concat_ws(' ', sport, school, content_type, library_join(content_types),
-                                 library_join(categories), sponsor), 'B')
-        || library_tsv(caption, 'C')
+    SELECT public.library_tsv(title, 'A')
+        || public.library_tsv(public.library_athlete_text(athletes) || ' ' || public.library_join(unresolved_handles), 'A')
+        || public.library_tsv(public.library_join(keywords) || ' ' || COALESCE(summary, ''), 'B')
+        || public.library_tsv(concat_ws(' ', sport, school, content_type, public.library_join(content_types),
+                                 public.library_join(categories), sponsor), 'B')
+        || public.library_tsv(caption, 'C')
 $$;
 
 CREATE TABLE IF NOT EXISTS library_items (
