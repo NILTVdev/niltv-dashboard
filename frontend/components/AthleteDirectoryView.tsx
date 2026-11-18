@@ -243,7 +243,7 @@ export default function AthleteDirectoryView({ initialFilters, initialPage, face
                     <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-[#475569]">
                       {p.ig_handle && <span className="truncate">@{p.ig_handle}</span>}
                       <span><Followers person={p} /> followers</span>
-                      {p.collab_views > 0 && <span className="tabular-nums">{fmt(p.collab_views)} collab views</span>}
+                      {p.collab_views != null && p.collab_views > 0 && <span className="tabular-nums">{fmt(p.collab_views)} collab views</span>}
                     </div>
                   </div>
                 </Link>
@@ -279,7 +279,7 @@ export default function AthleteDirectoryView({ initialFilters, initialPage, face
                     <td className="px-4 py-2.5"><StatusBadge status={p.status} /></td>
                     <td className="px-4 py-2.5 text-[#475569]">{p.ig_handle ? `@${p.ig_handle}` : "—"}</td>
                     <td className="px-4 py-2.5 text-right"><Followers person={p} /></td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">{p.collab_views > 0 ? fmt(p.collab_views) : "—"}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">{fmt(p.collab_views)}</td>
                   </tr>
                 ))}
               </tbody>

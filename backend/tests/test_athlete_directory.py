@@ -60,8 +60,9 @@ def app_row(id, ig=None, ambassador_id=None, first="Test", last="Applicant", **k
             "created_at": kw.get("created", T0), "updated_at": kw.get("updated")}
 
 
-def people(athletes=(), ambassadors=(), applications=(), posts=None):
-    return d.merge(d.Records(list(athletes), list(ambassadors), list(applications), posts or {}))
+def people(athletes=(), ambassadors=(), applications=(), posts=None, amb_posts=None):
+    return d.merge(d.Records(list(athletes), list(ambassadors), list(applications), posts or {},
+                             amb_posts or {}))
 
 
 def by_key(ps):
@@ -77,6 +78,16 @@ def by_key(ps):
     ("instagram.com/jane.doe", "jane.doe"),
     ("http://instagram.com/@jane_doe/", "jane_doe"),
     ("m.instagram.com/jane_doe#top", "jane_doe"),
+    ("instagram.com/_u/Jane.Doe", "jane.doe"),
+    ("https://www.instagram.com/stories/jane_doe/123/", "jane_doe"),
+    ("https://www.instagram.com/p/ABC123/", None),
+    ("instagram.com/reel/xyz", None),
+    ("instagram.com/reels/xyz/", None),
+    ("instagram.com/tv/xyz", None),
+    ("https://instagram.com/explore/tags/lax/", None),
+    ("instagram.com/", None),
+    ("p", None),
+    ("reel", None),
     ("N/A", None),
     ("none", None),
     ("jane doe", None),
@@ -100,6 +111,11 @@ def test_normalize_handle(raw, want):
     ("", None),
     (None, None),
     ("n/a", None),
+    ("500 maybe", 500),
+    ("300 kinda", 300),
+    ("900 mostly real", 900),
+    ("about 800 more or less", 800),
+    ("5k-10k followers", 5000),
 ])
 def test_parse_follower_count(text, want):
     assert d.parse_follower_count(text) == want
@@ -194,6 +210,32 @@ def test_status_and_roster_defaults():
 def test_collab_stats_fall_back_to_posts_by_handle():
     ps = people(applications=[app_row(1, ig="poster")], posts={"poster": (3, 4500, 210)})
     assert (ps[0]["collab_posts"], ps[0]["collab_views"], ps[0]["collab_engagement"]) == (3, 4500, 210)
+
+
+def test_post_links_never_merge_strangers():
+    ps = people(applications=[
+        app_row(1, ig="https://www.instagram.com/p/AAA/", first="Alpha", last="Sample"),
+        app_row(2, ig="instagram.com/p/BBB", first="Beta", last="Sample"),
+    ])
+    assert len(ps) == 2
+    assert all(p["ig_handle"] is None for p in ps)
+
+
+def test_uncached_ambassador_counts_stamped_posts():
+    ps = people(ambassadors=[amb(5, ig="fresh")], amb_posts={5: (2, 900, 40)},
+                posts={"fresh": (7, 7000, 700)})
+    assert (ps[0]["collab_posts"], ps[0]["collab_views"], ps[0]["collab_engagement"]) == (2, 900, 40)
+    assert d.apply(ps, d.Query(has_content=True))[0]["key"] == "amb-5"
+
+
+def test_unknown_collab_numbers_are_none_not_zero():
+    ps = by_key(people(ambassadors=[amb(5, ig="fresh"), amb(6, ig="seen", posts=1, views=300)],
+                       applications=[app_row(7, ig="nobody")]))
+    assert ps["amb-5"]["collab_posts"] == 0 and ps["amb-5"]["collab_views"] is None
+    assert ps["app-7"]["collab_views"] is None and ps["app-7"]["collab_engagement"] is None
+    ranked = [p["key"] for p in d.apply(list(ps.values()), d.Query(sort="collab_views"))]
+    assert ranked[0] == "amb-6"
+    assert [p["key"] for p in d.apply(list(ps.values()), d.Query(has_content=True))] == ["amb-6"]
 
 
 def test_resolve_key_accepts_any_member_key():
@@ -319,6 +361,12 @@ def seeded(db):
     ])
     db.commit()
     return {"roster": roster.id, "ambassador": ambassador.id}
+
+
+def test_load_records_counts_stamped_posts_per_ambassador(db, seeded):
+    records = d.load_records(db)
+    assert records.posts_by_ambassador == {seeded["ambassador"]: (1, 7000, 300)}
+    assert records.posts_by_handle == {"rory.roster": (1, 800, 20)}
 
 
 def _as(db, role):

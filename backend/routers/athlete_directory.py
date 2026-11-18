@@ -58,9 +58,9 @@ class PersonOut(BaseModel):
     partner_consent: Optional[bool]
     applied_at: Optional[datetime]
     first_seen: Optional[datetime]
-    collab_posts: int
-    collab_views: int
-    collab_engagement: int
+    collab_posts: Optional[int]              # None = unknown
+    collab_views: Optional[int]
+    collab_engagement: Optional[int]
     last_pulled: Optional[datetime]
 
 

@@ -60,22 +60,34 @@ ROSTER_CAMPUS = "duke"
 _IG_USERNAME = re.compile(r"^[a-z0-9._]{1,30}$")
 _IG_URL = re.compile(r"^(?:https?://)?(?:www\.|m\.)?(?:instagram\.com|instagr\.am)/+", re.I)
 # Answers people type when they have no account. Never treated as a handle.
-_NOT_A_HANDLE = {"none", "na", "n", "no", "nope", "null", "nil", "private", "instagram", "ig", "x", "tbd", "pending"}
+_NOT_A_HANDLE = {"none", "na", "n", "no", "nope", "null", "nil", "private", "instagram", "ig", "x", "tbd", "pending",
+                 # Instagram page paths, in case one slips past the URL rules below.
+                 "p", "reel", "reels", "tv", "stories", "explore", "accounts", "direct", "_u"}
+# instagram.com/<word>/... pages that are not a profile. "_u/<name>" and
+# "stories/<name>" carry the username in the next segment; the rest (a post,
+# reel or video link) carry no username at all.
+_IG_PREFIX_PATHS = {"_u", "stories"}
+_IG_NON_PROFILE_PATHS = {"p", "reel", "reels", "tv", "explore", "accounts", "direct"}
 
 
 def normalize_handle(raw: Optional[str]) -> Optional[str]:
     """Bare lowercase Instagram username, or None when the text is not one.
 
     Handles "@Jane", "jane.", "https://www.instagram.com/jane/?hl=en",
-    "instagram.com/jane" and stray whitespace.
+    "instagram.com/jane" and stray whitespace. A post, reel or video link has no username in it
+    and gives None.
     """
     if not raw:
         return None
     s = raw.strip()
     m = _IG_URL.match(s)
     if m:
-        s = s[m.end():]
-        s = re.split(r"[/?#]", s, maxsplit=1)[0]
+        parts = [x for x in re.split(r"[?#]", s[m.end():], maxsplit=1)[0].split("/") if x]
+        if parts and parts[0].lower() in _IG_PREFIX_PATHS:
+            parts = parts[1:]
+        if not parts or parts[0].lower() in _IG_NON_PROFILE_PATHS:
+            return None
+        s = parts[0]
     s = s.strip().lstrip("@").rstrip("./").lower()
     if not s or s in _NOT_A_HANDLE or not _IG_USERNAME.match(s):
         return None
@@ -83,7 +95,8 @@ def normalize_handle(raw: Optional[str]) -> Optional[str]:
 
 
 _NUM = r"(\d[\d,]*(?:\.\d+)?)"
-_SUFFIX = r"(k|m|thousand|million)?"
+# The suffix must end the word, so "500 maybe" is 500, not 500 million.
+_SUFFIX = r"(k|m|thousand|million)?(?![a-z])"
 _RANGE = re.compile(_NUM + r"\s*" + _SUFFIX + r"\s*(?:-|to|–)\s*" + _NUM + r"\s*" + _SUFFIX)
 _SINGLE = re.compile(_NUM + r"\s*" + _SUFFIX)
 _MULT = {"k": 1_000, "thousand": 1_000, "m": 1_000_000, "million": 1_000_000}
@@ -159,6 +172,9 @@ class Records:
     # Network posts not stamped with an ambassador, keyed by the poster's
     # lowercase handle: (posts, views, engagement).
     posts_by_handle: dict[str, tuple[int, int, int]] = field(default_factory=dict)
+    # Network posts stamped with an ambassador, keyed by ambassador id. Used
+    # when an ambassador's cached_collab_* columns have not been computed yet.
+    posts_by_ambassador: dict[int, tuple[int, int, int]] = field(default_factory=dict)
 
 
 def _rows(db: Session, stmt) -> list[dict]:
@@ -185,7 +201,14 @@ def load_records(db: Session) -> Records:
         .group_by(handle)
     ).all()
     posts_by_handle = {h: (int(n), int(v), int(e)) for h, n, v, e in rows if h}
-    return Records(athletes, ambassadors, applications, posts_by_handle)
+    rows = db.execute(
+        select(NiltvNetworkPost.ambassador_id, func.count(),
+               func.coalesce(func.sum(NiltvNetworkPost.views), 0), func.coalesce(func.sum(engagement), 0))
+        .where(NiltvNetworkPost.ambassador_id.isnot(None))
+        .group_by(NiltvNetworkPost.ambassador_id)
+    ).all()
+    posts_by_ambassador = {i: (int(n), int(v), int(e)) for i, n, v, e in rows}
+    return Records(athletes, ambassadors, applications, posts_by_handle, posts_by_ambassador)
 
 
 # ── Merge ─────────────────────────────────────────────────────────────────────
@@ -300,7 +323,7 @@ def merge(records: Records) -> list[dict]:
             m_rows.sort(key=lambda r: (r["status"] != "confirmed", r["id"]))
         if len(p_rows) > 1:
             p_rows.sort(key=_app_recency, reverse=True)
-        people.append(_person(a_rows, m_rows, p_rows, records.posts_by_handle))
+        people.append(_person(a_rows, m_rows, p_rows, records))
     return people
 
 
@@ -336,8 +359,37 @@ def _status(athletes: list[dict], ambassadors: list[dict]) -> str:
     return "applicant"
 
 
+def _sum_known(values: Iterable[Optional[int]]) -> Optional[int]:
+    """Sum of the known values, or None when none is known."""
+    known = [v for v in values if v is not None]
+    return sum(known) if known else None
+
+
+def _collab_stats(ambassadors: list[dict], ig_handle: Optional[str],
+                  records: Records) -> tuple[Optional[int], Optional[int], Optional[int]]:
+    """(posts, views, engagement) of a person's NIL TV collabs. None means
+    unknown, never zero.
+
+    An ambassador's collabs are the posts stamped with their id: the cached
+    columns when the precompute job has filled them, else counted live. Other
+    people get the unstamped posts whose poster handle is theirs."""
+    if ambassadors:
+        rows = []
+        for m in ambassadors:
+            if m.get("cached_collab_posts") is not None:
+                rows.append((m["cached_collab_posts"], m.get("cached_collab_views"),
+                             m.get("cached_collab_engagement")))
+            else:
+                rows.append(records.posts_by_ambassador.get(m["id"], (0, None, None)))
+        return (_sum_known(r[0] for r in rows), _sum_known(r[1] for r in rows),
+                _sum_known(r[2] for r in rows))
+    if ig_handle and ig_handle in records.posts_by_handle:
+        return records.posts_by_handle[ig_handle]
+    return 0, None, None
+
+
 def _person(athletes: list[dict], ambassadors: list[dict], applications: list[dict],
-            posts_by_handle: dict[str, tuple[int, int, int]]) -> dict:
+            records: Records) -> dict:
     """One person from their records. Each list is already in priority order:
     athletes by id, ambassadors confirmed first, applications newest first."""
     a0 = athletes[0] if athletes else _EMPTY
@@ -378,12 +430,7 @@ def _person(athletes: list[dict], ambassadors: list[dict], applications: list[di
                 followers_source, self_reported = "application", True
                 break
 
-    if m0 and m0.get("cached_collab_posts") is not None:
-        collab_posts = sum(m.get("cached_collab_posts") or 0 for m in ambassadors)
-        collab_views = sum(m.get("cached_collab_views") or 0 for m in ambassadors)
-        collab_engagement = sum(m.get("cached_collab_engagement") or 0 for m in ambassadors)
-    else:
-        collab_posts, collab_views, collab_engagement = posts_by_handle.get(ig_handle or "", (0, 0, 0))
+    collab_posts, collab_views, collab_engagement = _collab_stats(ambassadors, ig_handle, records)
 
     created = [r.get("created_at") for r in (*athletes, *ambassadors, *applications) if r.get("created_at")]
     pulled = [r.get("cached_last_pulled") for r in (*athletes, *ambassadors) if r.get("cached_last_pulled")]
@@ -522,7 +569,7 @@ def _matches(p: dict, f: Query) -> bool:
         return False
     if f.max_followers is not None and (p["followers"] is None or p["followers"] > f.max_followers):
         return False
-    if f.has_content is not None and (p["collab_posts"] > 0) != f.has_content:
+    if f.has_content is not None and ((p["collab_posts"] or 0) > 0) != f.has_content:
         return False
     return True
 
@@ -539,7 +586,7 @@ def apply(people: list[dict], f: Query) -> list[dict]:
     if f.sort == "followers":
         out.sort(key=lambda p: -(p["followers"] if p["followers"] is not None else -1))
     elif f.sort == "collab_views":
-        out.sort(key=lambda p: -p["collab_views"])
+        out.sort(key=lambda p: -(p["collab_views"] if p["collab_views"] is not None else -1))
     elif f.sort == "newest":
         out.sort(key=lambda p: _ts(p["first_seen"]), reverse=True)
     return out

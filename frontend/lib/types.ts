@@ -783,9 +783,9 @@ export interface DirectoryPerson {
   partner_consent: boolean | null;
   applied_at: string | null;
   first_seen: string | null;
-  collab_posts: number;
-  collab_views: number;
-  collab_engagement: number;
+  collab_posts: number | null;
+  collab_views: number | null;
+  collab_engagement: number | null;
   last_pulled: string | null;
 }
 
