@@ -2,9 +2,14 @@
 Network Screen router — /api/network-screen
 
 Aggregated NIL TV channel performance metrics for the Channel Insights page.
-Currently backed by Instagram only (account='niltv'). Each platform returns the
-same shape; unavailable platforms return available=False so the frontend can
-render "coming soon" states without code changes when new platforms are added.
+Backed by Instagram (account='niltv') and YouTube (youtube_* tables, live once
+run_youtube has written a snapshot). Each platform returns the same shape;
+unavailable platforms return available=False so the frontend can render
+"coming soon" states without code changes when new platforms are added.
+
+The aggregate banner sums the live platforms: followers (Instagram followers
+plus YouTube subscribers), views on posts published in the period, and posts
+published in the period.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -17,7 +22,8 @@ from sqlalchemy.orm import Session
 
 from backend.auth import require_api_key
 from backend.database import get_db
-from backend.models import BrandSnapshot, NiltvNetworkPost
+from backend.models import BrandSnapshot, NiltvNetworkPost, YoutubeVideo
+from backend.routers.youtube import last_in, snapshots_by_channel
 
 router = APIRouter(dependencies=[Depends(require_api_key)])
 
@@ -53,7 +59,7 @@ class MonthStats(BaseModel):
     avg_views_per_post: Optional[float]
     format_breakdown: dict[str, FormatStats]
     engagement_rate_overall: Optional[float]
-    collabs_published_monthly: int
+    collabs_published_monthly: Optional[int]  # None where the platform has no collabs (YouTube)
     # Collaborator-owned posts carry no shares/saves/reach (an IG platform limit),
     # so engagement rate on collabs is understated until a CSV backfill fills them.
     collab_data_warning: bool
@@ -413,7 +419,7 @@ def _compute_month_stats(
     )
 
 
-def _compute_ratios(current: MonthStats) -> PlatformRatios:
+def _compute_ratios(current: MonthStats, reel_key: str = "REELS") -> PlatformRatios:
     followers = current.followers or 0
 
     weekly_views_to_followers = (
@@ -428,7 +434,9 @@ def _compute_ratios(current: MonthStats) -> PlatformRatios:
         else None
     )
 
-    reel_stats = current.format_breakdown.get("REELS")  # niltv_network_posts.post_type uses media_product_type
+    # Instagram: REELS (niltv_network_posts.post_type uses media_product_type).
+    # YouTube: SHORTS, the closest equivalent.
+    reel_stats = current.format_breakdown.get(reel_key)
     avg_views_per_reel = (
         reel_stats.avg_views if reel_stats and reel_stats.avg_views else None
     )
@@ -441,6 +449,128 @@ def _compute_ratios(current: MonthStats) -> PlatformRatios:
         views_per_post_to_followers=views_per_post_to_followers,
         avg_views_per_reel=avg_views_per_reel,
         engagement_rate_reels=engagement_rate_reels,
+    )
+
+
+# ── YouTube ───────────────────────────────────────────────────────────────────
+
+def _window(year: int, month: int, period_start: Optional[datetime],
+            period_end: Optional[datetime]) -> tuple[datetime, datetime]:
+    if period_start is not None and period_end is not None:
+        return period_start, period_end
+    return _month_bounds(year, month)
+
+
+def _baseline_floor(start: datetime, end: datetime) -> datetime:
+    """Earliest snapshot that may serve as a period's starting point. A
+    calendar-month period needs one from the month before; any other period
+    needs one from the equally long stretch just before it."""
+    if start == start.replace(day=1, hour=0, minute=0, second=0, microsecond=0):
+        prev_end = start - timedelta(days=1)
+        return datetime(prev_end.year, prev_end.month, 1, tzinfo=timezone.utc)
+    return start - (end - start)
+
+
+def _sum_latest(snaps: dict[str, list], start, end) -> Optional[int]:
+    """Subscribers summed over channels: each channel's last snapshot in [start, end)."""
+    vals = [s.subscribers for rows in snaps.values()
+            for s in [last_in(rows, start, end)] if s is not None and s.subscribers is not None]
+    return sum(vals) if vals else None
+
+
+def _sum_change(snaps: dict[str, list], cur: tuple, base: tuple) -> Optional[int]:
+    """Subscriber change summed over the channels that have a snapshot in both
+    windows. None when no channel does: a missing end is unknown, not 0."""
+    deltas = []
+    for rows in snaps.values():
+        a, b = last_in(rows, *cur), last_in(rows, *base)
+        if a is not None and b is not None and a.subscribers is not None and b.subscribers is not None:
+            deltas.append(int(a.subscribers) - int(b.subscribers))
+    return sum(deltas) if deltas else None
+
+
+def _youtube_engagement(videos: list) -> Optional[float]:
+    # YouTube has no public shares or saves: likes + comments over views.
+    return _engagement(
+        sum(v.likes or 0 for v in videos), sum(v.comments or 0 for v in videos), 0, 0,
+        sum(v.views or 0 for v in videos))
+
+
+def _youtube_format(v) -> str:
+    if v.is_short is None:
+        return "OTHER"
+    return "SHORTS" if v.is_short else "LONG_FORM"
+
+
+def _youtube_week(db: Session, snaps: dict[str, list], now: datetime,
+                  weeks_back: int = 0) -> tuple[int, int, Optional[int]]:
+    """(videos published, their views, subscriber change) for the rolling
+    seven-day window `weeks_back` weeks before the latest one."""
+    end = _week_bounds(now)[1] - timedelta(days=7 * weeks_back)
+    start = end - timedelta(days=7)
+    videos = (db.query(YoutubeVideo)
+              .filter(YoutubeVideo.published_at >= start, YoutubeVideo.published_at < end).all())
+    change = _sum_change(snaps, (start.date(), end.date()),
+                         ((start - timedelta(days=7)).date(), start.date()))
+    return len(videos), sum(v.views or 0 for v in videos), change
+
+
+def _compute_youtube_stats(
+    db: Session,
+    snaps: dict[str, list],
+    year: int,
+    month: int,
+    now: datetime,
+    period_start: Optional[datetime] = None,
+    period_end: Optional[datetime] = None,
+) -> MonthStats:
+    """The Instagram MonthStats shape filled from YouTube data. Subscriber
+    numbers come from the daily channel snapshots; post and view numbers from
+    the videos published in the period (their current view counts, the same
+    rule Instagram uses)."""
+    start, end = _window(year, month, period_start, period_end)
+    stats_now = min(now, end - timedelta(microseconds=1))
+    week_posts, week_views, week_subs = _youtube_week(db, snaps, now)
+    d = lambda t: t.date()  # noqa: E731 - snapshots are keyed by UTC day
+
+    def published(a: datetime, b: datetime) -> list:
+        return (db.query(YoutubeVideo)
+                .filter(YoutubeVideo.published_at >= a, YoutubeVideo.published_at < b).all())
+
+    videos = published(start, end)
+    rolling = published(stats_now - timedelta(days=28), stats_now)
+    with_views = [v for v in videos if v.views is not None]
+    total_views = sum(v.views for v in with_views)
+
+    breakdown: dict[str, FormatStats] = {}
+    for key in sorted({_youtube_format(v) for v in videos}):
+        group = [v for v in videos if _youtube_format(v) == key]
+        known = [v for v in group if v.views is not None]
+        fv = sum(v.views for v in known)
+        breakdown[key] = FormatStats(
+            posts=len(group),
+            posts_with_views=len(known),
+            total_views=fv,
+            avg_views=round(fv / len(known), 1) if known else 0.0,
+            engagement_rate=_youtube_engagement(known),
+        )
+
+    floor = _baseline_floor(start, end)
+    return MonthStats(
+        followers=_sum_latest(snaps, None, d(end)),
+        new_followers_monthly=_sum_change(snaps, (d(start), d(end)), (d(floor), d(start))),
+        new_followers_weekly=week_subs,
+        posts_monthly=len(videos),
+        posts_weekly=week_posts,
+        avg_posts_per_week=round(len(rolling) / 4, 1),
+        total_views_monthly=total_views,
+        total_views_weekly=week_views,
+        posts_with_views_monthly=len(with_views),
+        avg_views_per_post=round(total_views / len(with_views), 1) if with_views else None,
+        format_breakdown=breakdown,
+        engagement_rate_overall=_youtube_engagement(with_views),
+        collabs_published_monthly=None,
+        collab_data_warning=False,
     )
 
 
@@ -462,8 +592,8 @@ def network_screen_summary(
         prev_year, prev_month = cur_year, cur_month - 1
 
     if mode == "month":
-        current = _compute_month_stats(db, cur_year, cur_month, now)
-        prior = _compute_month_stats(db, prev_year, prev_month, now)
+        cur_args = (cur_year, cur_month, now)
+        prior_args = (prev_year, prev_month, now)
     elif mode == "prevmonth":
         # The last COMPLETE month as the primary column (e.g. August on Sep 1),
         # compared against the month before it.
@@ -471,8 +601,8 @@ def network_screen_summary(
             prev2_year, prev2_month = prev_year - 1, 12
         else:
             prev2_year, prev2_month = prev_year, prev_month - 1
-        current = _compute_month_stats(db, prev_year, prev_month, now)
-        prior = _compute_month_stats(db, prev2_year, prev2_month, now)
+        cur_args = (prev_year, prev_month, now)
+        prior_args = (prev2_year, prev2_month, now)
     elif mode == "mtd":
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         current_start = today_start.replace(day=1)
@@ -486,8 +616,8 @@ def network_screen_summary(
             prior_start + elapsed + __import__("datetime").timedelta(days=1),
             prior_calendar_end,
         )
-        current = _compute_month_stats(db, cur_year, cur_month, now, current_start, current_end)
-        prior = _compute_month_stats(db, prev_year, prev_month, now, prior_start, prior_end)
+        cur_args = (cur_year, cur_month, now, current_start, current_end)
+        prior_args = (prev_year, prev_month, now, prior_start, prior_end)
     else:
         import datetime as dt
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -495,8 +625,10 @@ def network_screen_summary(
         current_start = today_start - dt.timedelta(days=29)
         prior_end = current_start
         prior_start = prior_end - dt.timedelta(days=30)
-        current = _compute_month_stats(db, cur_year, cur_month, now, current_start, current_end)
-        prior = _compute_month_stats(db, prev_year, prev_month, now, prior_start, prior_end)
+        cur_args = (cur_year, cur_month, now, current_start, current_end)
+        prior_args = (prev_year, prev_month, now, prior_start, prior_end)
+    current = _compute_month_stats(db, *cur_args)
+    prior = _compute_month_stats(db, *prior_args)
     # Week metrics are always rolling seven-day windows, independent of the
     # selected month/30-day comparison mode.
     current.posts_weekly = weekly.current.posts
@@ -515,22 +647,51 @@ def network_screen_summary(
         ratios=ratios,
     )
 
+    # YouTube goes live with its first channel snapshot (run_youtube).
+    yt_snaps = snapshots_by_channel(db)
+    if yt_snaps:
+        yt_current = _compute_youtube_stats(db, yt_snaps, *cur_args)
+        yt_prior = _compute_youtube_stats(db, yt_snaps, *prior_args)
+        # Same rule as Instagram: the prior column's week is the previous seven days.
+        (yt_prior.posts_weekly, yt_prior.total_views_weekly,
+         yt_prior.new_followers_weekly) = _youtube_week(db, yt_snaps, now, weeks_back=1)
+        youtube = PlatformSummary(
+            platform="youtube",
+            available=True,
+            current_month=yt_current,
+            prior_month=yt_prior,
+            ratios=_compute_ratios(yt_current, reel_key="SHORTS"),
+        )
+    else:
+        youtube = PlatformSummary(platform="youtube", available=False)
+
     # Stubs — fill in as each platform is connected
-    stubs = [
+    platforms = [
+        instagram,
         PlatformSummary(platform="facebook", available=False),
-        PlatformSummary(platform="youtube", available=False),
+        youtube,
         PlatformSummary(platform="tiktok", available=False),
         PlatformSummary(platform="snapchat", available=False),
         PlatformSummary(platform="linkedin", available=False),
     ]
+    # A platform counts toward the banner only when it has data for the
+    # period. Instagram keeps its original rule (always counted). Other
+    # platforms need a follower number for the period: a YouTube channel with
+    # no snapshot by the period's end is unknown, not zero, so it stays out of
+    # both the sums and platforms_live.
+    live = [
+        p.current_month for p in platforms
+        if p.available and p.current_month
+        and (p.platform == "instagram" or p.current_month.followers is not None)
+    ]
 
-    platforms = [instagram] + stubs
-
+    # Sums across live platforms: Instagram followers + YouTube subscribers,
+    # views on posts published in the period, posts published in the period.
     aggregate = Aggregate(
-        total_followers=current.followers or 0,
-        total_views_monthly=current.total_views_monthly,
-        total_posts_monthly=current.posts_monthly,
-        platforms_live=1,
+        total_followers=sum(m.followers or 0 for m in live),
+        total_views_monthly=sum(m.total_views_monthly for m in live),
+        total_posts_monthly=sum(m.posts_monthly for m in live),
+        platforms_live=len(live),
         platforms_total=len(platforms),
     )
 

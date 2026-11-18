@@ -101,6 +101,17 @@ export const getNetworkScreenSummary = (mode = "month") =>
 export const getNetworkScreenTopPosts = (limit = 20) =>
   apiFetch<NetworkScreenTopPost[]>(`/api/network-screen/top-posts?limit=${limit}`);
 
+// ── YouTube ───────────────────────────────────────────────────────────────────
+
+import type { YoutubeAnalytics, YoutubeStatus, YoutubeSummary, YoutubeVideoPage } from "./types";
+
+export const getYoutubeSummary = () => apiFetch<YoutubeSummary>("/api/youtube/summary");
+export const getYoutubeStatus = () => apiFetch<YoutubeStatus>("/api/youtube/status");
+export const getYoutubeAnalytics = () => apiFetch<YoutubeAnalytics>("/api/youtube/analytics");
+/** One page of uploads; the page sorts and filters the loaded rows itself. */
+export const getYoutubeVideos = (pageSize = 500) =>
+  apiFetch<YoutubeVideoPage>(`/api/youtube/videos?page_size=${pageSize}&sort=views`);
+
 // ── Campus Channels ───────────────────────────────────────────────────────────
 
 import type { CampusChannelsSummary } from "./types";

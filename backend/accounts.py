@@ -35,6 +35,7 @@ _AGGREGATE = (
     "/api/network-screen",
     "/api/campus-channels",
     "/api/web-analytics",
+    "/api/youtube",
 )
 _ROSTER = ("/api/athletes", "/api/snapshots", "/api/posts")
 READ_PREFIXES = {

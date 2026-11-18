@@ -1,6 +1,6 @@
 from sqlalchemy import (
     Column, Index, Integer, Text, Boolean, Numeric, BigInteger,
-    TIMESTAMP, ForeignKey, JSON, UniqueConstraint,
+    TIMESTAMP, ForeignKey, JSON, UniqueConstraint, Date,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -803,3 +803,107 @@ class ApplicationEvent(Base):
     detail = Column(JSON)
 
     application = relationship("Application", back_populates="events")
+
+
+# ── YouTube (migration 035) ─────────────────────────────────────────────────
+
+class YoutubeChannel(Base):
+    """A tracked YouTube channel (YOUTUBE_CHANNEL_IDS), refreshed by run_youtube."""
+    __tablename__ = "youtube_channels"
+
+    channel_id = Column(Text, primary_key=True)
+    title = Column(Text)
+    handle = Column(Text)
+    uploads_playlist_id = Column(Text)
+    thumbnail_url = Column(Text)
+    updated_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+
+
+class YoutubeChannelSnapshot(Base):
+    """Channel totals, one row per channel per UTC day (upserted)."""
+    __tablename__ = "youtube_channel_snapshots"
+    __table_args__ = (
+        UniqueConstraint("channel_id", "day", name="uq_youtube_channel_snapshot_day"),
+        Index("idx_youtube_channel_snap_pulled", "pulled_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    channel_id = Column(Text, ForeignKey("youtube_channels.channel_id", ondelete="CASCADE"), nullable=False)
+    day = Column(Date, nullable=False)
+    pulled_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+    subscribers = Column(BigInteger)     # NULL when the channel hides the count
+    total_views = Column(BigInteger)
+    video_count = Column(Integer)
+
+
+class YoutubeVideo(Base):
+    """One upload with its current counts. is_short = duration <= 180 s
+    (the Data API reports neither Shorts nor aspect ratio)."""
+    __tablename__ = "youtube_videos"
+    __table_args__ = (
+        Index("idx_youtube_videos_channel_published", "channel_id", "published_at"),
+    )
+
+    video_id = Column(Text, primary_key=True)
+    channel_id = Column(Text, ForeignKey("youtube_channels.channel_id", ondelete="CASCADE"), nullable=False)
+    title = Column(Text)
+    published_at = Column(TIMESTAMP(timezone=True))
+    duration_sec = Column(Integer)
+    is_short = Column(Boolean)
+    thumbnail_url = Column(Text)
+    views = Column(BigInteger)
+    likes = Column(BigInteger)
+    comments = Column(BigInteger)
+    updated_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+
+
+class YoutubeVideoSnapshot(Base):
+    """Per-video counts, one row per video per UTC day (upserted)."""
+    __tablename__ = "youtube_video_snapshots"
+    __table_args__ = (
+        UniqueConstraint("video_id", "day", name="uq_youtube_video_snapshot_day"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    video_id = Column(Text, ForeignKey("youtube_videos.video_id", ondelete="CASCADE"), nullable=False)
+    day = Column(Date, nullable=False)
+    views = Column(BigInteger)
+    likes = Column(BigInteger)
+    comments = Column(BigInteger)
+
+
+class YoutubeDailyAnalytics(Base):
+    """YouTube Analytics channel metrics for one day (owner consent required)."""
+    __tablename__ = "youtube_daily_analytics"
+    __table_args__ = (
+        UniqueConstraint("channel_id", "day", name="uq_youtube_daily_analytics_day"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    channel_id = Column(Text, nullable=False)
+    day = Column(Date, nullable=False)
+    views = Column(BigInteger)
+    estimated_minutes_watched = Column(BigInteger)
+    average_view_duration_sec = Column(Integer)
+    average_view_percentage = Column(Numeric)
+    subscribers_gained = Column(Integer)
+    subscribers_lost = Column(Integer)
+    pulled_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+
+
+class YoutubeVideoAnalytics(Base):
+    """YouTube Analytics per-video totals over window_days ending on period_end."""
+    __tablename__ = "youtube_video_analytics"
+    __table_args__ = (
+        UniqueConstraint("video_id", "period_end", "window_days", name="uq_youtube_video_analytics_period"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    video_id = Column(Text, nullable=False)
+    period_end = Column(Date, nullable=False)
+    window_days = Column(Integer, nullable=False)
+    views = Column(BigInteger)
+    estimated_minutes_watched = Column(BigInteger)
+    average_view_duration_sec = Column(Integer)
+    average_view_percentage = Column(Numeric)
+    pulled_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())

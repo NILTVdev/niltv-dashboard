@@ -365,7 +365,7 @@ export interface NetworkScreenMonthStats {
   avg_views_per_post: number | null;
   format_breakdown: Record<string, NetworkScreenFormatStats>;
   engagement_rate_overall: number | null;
-  collabs_published_monthly: number;
+  collabs_published_monthly: number | null; // null where a platform has no collabs (YouTube)
   collab_data_warning: boolean;
 }
 
@@ -409,6 +409,121 @@ export interface NetworkScreenSummary {
   platforms: NetworkScreenPlatform[];
   aggregate: NetworkScreenAggregate;
   weekly_comparison?: NetworkScreenWeeklyComparison;
+}
+
+// ── YouTube (/api/youtube) ────────────────────────────────────────────────────
+
+export interface YoutubeSnapshotPoint {
+  day: string;
+  subscribers: number | null;
+  total_views: number | null;
+  video_count: number | null;
+}
+
+export interface YoutubeChannelChanges {
+  subscribers_7d: number | null;
+  subscribers_28d: number | null;
+  subscribers_month: number | null;
+  subscribers_prior_month: number | null;
+  views_7d: number | null;
+  views_28d: number | null;
+  views_month: number | null;
+  views_prior_month: number | null;
+}
+
+export interface YoutubeChannelSummary {
+  channel_id: string;
+  title: string | null;
+  handle: string | null;
+  thumbnail_url: string | null;
+  url: string;
+  latest_day: string;
+  pulled_at: string;
+  subscribers: number | null;
+  total_views: number | null;
+  video_count: number | null;
+  changes: YoutubeChannelChanges;
+  series: YoutubeSnapshotPoint[];
+}
+
+export interface YoutubeSummary {
+  channels: YoutubeChannelSummary[];
+  last_pulled: string | null;
+}
+
+export interface YoutubeVideo {
+  video_id: string;
+  channel_id: string;
+  title: string | null;
+  published_at: string | null;
+  duration_sec: number | null;
+  is_short: boolean | null;
+  thumbnail_url: string | null;
+  views: number | null;
+  likes: number | null;
+  comments: number | null;
+  views_per_day: number | null;
+  url: string;
+}
+
+export interface YoutubeVideoPage {
+  total: number;
+  page: number;
+  page_size: number;
+  items: YoutubeVideo[];
+}
+
+export interface YoutubeStatus {
+  configured: boolean;
+  channel_ids: string[];
+  channels_tracked: number;
+  videos_tracked: number;
+  last_pull: string | null;
+  analytics_connected: boolean;
+  last_analytics_pull: string | null;
+}
+
+export interface YoutubeAnalyticsDay {
+  day: string;
+  views: number | null;
+  watch_hours: number | null;
+  average_view_duration_sec: number | null;
+  average_view_percentage: number | null;
+  subscribers_gained: number | null;
+  subscribers_lost: number | null;
+}
+
+export interface YoutubeAnalyticsTotals {
+  days: number;
+  start: string | null;
+  end: string | null;
+  views: number | null;
+  watch_hours: number | null;
+  average_view_duration_sec: number | null;
+  average_view_percentage: number | null;
+  subscribers_net: number | null;
+}
+
+export interface YoutubeAnalyticsVideo {
+  video_id: string;
+  title: string | null;
+  thumbnail_url: string | null;
+  is_short: boolean | null;
+  url: string;
+  views: number | null;
+  watch_hours: number | null;
+  average_view_duration_sec: number | null;
+  average_view_percentage: number | null;
+}
+
+export interface YoutubeAnalytics {
+  connected: boolean;
+  channel_id?: string | null;
+  last_pulled?: string | null;
+  daily?: YoutubeAnalyticsDay[];
+  totals_28d?: YoutubeAnalyticsTotals | null;
+  top_videos_period_end?: string | null;
+  top_videos?: YoutubeAnalyticsVideo[];
 }
 
 export interface NetworkScreenTopPost {
