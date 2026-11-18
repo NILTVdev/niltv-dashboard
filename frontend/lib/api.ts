@@ -6,6 +6,7 @@ import type {
   TrueBlueNetworkSummary, TrueBlueTopAccount, TrueBlueNetworkPost, NetworkMetricsOverTime,
   GA4Snapshot, GSCDailyTotal, GSCQuerySnapshot, GSCPageSnapshot,
   GA4Summary, GSCSummary,
+  LibraryPage, LibraryFacets, LibraryStatus,
 } from "./types";
 
 import { cookies } from "next/headers";
@@ -73,6 +74,11 @@ export const getBrandPosts = (limit = 200, account = "niltv") => apiFetch<BrandP
 export const getBrandSummary = (account = "niltv") => apiFetch<BrandSummary>(`/api/brand/summary?account=${account}`);
 export const getNiltvNetworkPosts = (limit = 500) => apiFetch<NiltvNetworkPost[]>(`/api/brand/network/posts?limit=${limit}`);
 export const getNiltvNetworkSummary = () => apiFetch<NiltvNetworkSummary>("/api/brand/network/summary");
+
+// Content library (fed by the app's ingest). qs = lib/library.ts libraryQuery().
+export const getLibrary = (qs = "") => apiFetch<LibraryPage>(`/api/library/${qs ? `?${qs}` : ""}`);
+export const getLibraryFacets = (qs = "") => apiFetch<LibraryFacets>(`/api/library/facets${qs ? `?${qs}` : ""}`);
+export const getLibraryStatus = () => apiFetch<LibraryStatus>("/api/library/status");
 
 // TrueBlue TV
 export const getTrueBlueProfile = () => apiFetch<TrueBlueSnapshot | null>("/api/trueblue/profile");

@@ -984,3 +984,93 @@ export interface DirectoryDetail {
   posts: DirectoryPost[];
   applications: DirectoryApplication[] | null;
 }
+
+// ── Content library (/api/library, backend/routers/library.py) ──────────────
+
+export interface LibraryAthlete {
+  id: string | null;
+  name: string | null;
+  handle: string | null;
+}
+
+/** Instagram numbers joined by media id. null = not known, never 0. */
+export interface LibraryPerformance {
+  matched: boolean;
+  views: number | null;
+  likes: number | null;
+  comments: number | null;
+  shares: number | null;
+  saves: number | null;
+  reach: number | null;
+  interactions: number | null;
+  permalink: string | null;
+}
+
+export interface LibraryItem {
+  content_id: string;
+  stage: string;
+  ig_post_id: string | null;
+  channel_id: string | null;
+  channel_name: string | null;
+  title: string;
+  caption: string | null;
+  summary: string | null;
+  keywords: string[];
+  sport: string | null;
+  school: string | null;
+  content_type: string | null;
+  content_types: string[];
+  categories: string[];
+  sponsor: string | null;
+  athletes: LibraryAthlete[];
+  unresolved_handles: string[];
+  status: string;
+  qc_state: string | null;
+  poster_url: string | null;
+  video_url: string | null;
+  duration_sec: number | null;
+  posted_at: string | null;
+  updated_at: string | null;
+  removed: boolean;
+  first_seen_at: string;
+  last_synced_at: string;
+  performance: LibraryPerformance;
+}
+
+export interface LibraryPage {
+  total: number;
+  limit: number;
+  offset: number;
+  items: LibraryItem[];
+}
+
+export interface LibraryFacetValue {
+  value: string;
+  label: string;
+  count: number;
+}
+
+export type LibraryFacetKey = "sport" | "school" | "channel" | "content_type" | "category" | "sponsor" | "qc_state";
+
+export type LibraryFacets = Record<LibraryFacetKey, LibraryFacetValue[]>;
+
+export interface LibrarySyncRun {
+  id: number;
+  received_at: string;
+  stage: string | null;
+  generated_at: string | null;
+  received: number;
+  upserted: number;
+  removed: number;
+  ok: boolean;
+  error: string | null;
+}
+
+export interface LibraryStatus {
+  last_run: LibrarySyncRun | null;
+  last_ok_run: LibrarySyncRun | null;
+  items: number;
+  removed: number;
+  needs_tagging: number;
+  by_qc_state: { qc_state: string | null; count: number }[];
+}

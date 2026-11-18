@@ -5,7 +5,7 @@
  * browser is shown.
  *
  *   admin    everything
- *   general  analytics, including the athlete roster; read-only
+ *   general  analytics, including the athlete roster and the content library; read-only
  *   demo     aggregate analytics only; read-only
  *
  * Everyone lands on the NIL TV network page.
@@ -36,11 +36,13 @@ const ROSTER_PAGES = [
   `${TRUEBLUETV}/roster`, `${TRUEBLUETV}/player-details`, `${TRUEBLUETV}/athletes`,
   "/athletes",
 ];
+// Per-clip content library. Not for demo accounts (backend: /api/library).
+export const LIBRARY = "/library";
 // Every signed-in account can manage its own password.
 const SELF_PAGES = ["/account"];
 
 const PAGES: Record<Exclude<Role, "admin">, string[]> = {
-  general: [...AGGREGATE_PAGES, ...SELF_PAGES],
+  general: [...AGGREGATE_PAGES, LIBRARY, ...SELF_PAGES],
   demo: [...AGGREGATE_PAGES, ...SELF_PAGES],
 };
 

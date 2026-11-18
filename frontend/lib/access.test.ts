@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { canSeePage } from "./access";
+import { canSeePage, LIBRARY } from "./access";
 import { CAMPUS_CHANNELS, TRUEBLUETV, TRUEBLUETV_TABS, athletePath } from "./channels";
 
 const tab = (label: string) => TRUEBLUETV_TABS.find((t) => t.label === label)!.href;
@@ -44,6 +44,14 @@ describe("canSeePage", () => {
       expect(canSeePage("general", path)).toBe(false);
       expect(canSeePage("demo", path)).toBe(false);
       expect(canSeePage("admin", path)).toBe(true);
+    }
+  });
+
+  it("opens the content library to admin and general, not demo", () => {
+    for (const path of [LIBRARY, `${LIBRARY}/ig-123`]) {
+      expect(canSeePage("admin", path)).toBe(true);
+      expect(canSeePage("general", path)).toBe(true);
+      expect(canSeePage("demo", path)).toBe(false);
     }
   });
 

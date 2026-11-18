@@ -38,8 +38,11 @@ _AGGREGATE = (
     "/api/youtube",
 )
 _ROSTER = ("/api/athletes", "/api/snapshots", "/api/posts", "/api/athlete-directory")
+# Per-clip content library: general reads it, demo does not. Its sync POST
+# stays admin/service only like every other write.
+_LIBRARY = ("/api/library",)
 READ_PREFIXES = {
-    "general": _AGGREGATE + _ROSTER,
+    "general": _AGGREGATE + _ROSTER + _LIBRARY,
     "demo": _AGGREGATE,
 }
 # Inside an allowed prefix but still admin-only (account registry, tokens,

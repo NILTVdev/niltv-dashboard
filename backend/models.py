@@ -1,7 +1,8 @@
 from sqlalchemy import (
     Column, Index, Integer, Text, Boolean, Numeric, BigInteger,
-    TIMESTAMP, ForeignKey, JSON, UniqueConstraint, Date,
+    TIMESTAMP, ForeignKey, JSON, UniqueConstraint, Date, Float,
 )
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -907,3 +908,58 @@ class YoutubeVideoAnalytics(Base):
     average_view_duration_sec = Column(Integer)
     average_view_percentage = Column(Numeric)
     pulled_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+
+
+# ── Content library (migration 036) ─────────────────────────────────────────
+
+class LibraryItem(Base):
+    """One clip in the content library (migration 036), as the NIL TV app's
+    ingest labelled it. Written only by POST /api/library/sync; a full
+    snapshot marks this stage's missing rows removed instead of deleting them.
+    ig_post_id joins niltv_network_posts.post_id for performance numbers.
+    The generated ``search`` tsvector column is read through raw SQL only, so
+    it is not mapped here (the ORM must never try to write it)."""
+    __tablename__ = "library_items"
+
+    content_id = Column(Text, primary_key=True)
+    stage = Column(Text, nullable=False)
+    ig_post_id = Column(Text)
+    channel_id = Column(Text)
+    channel_name = Column(Text)
+    title = Column(Text, nullable=False, default="")
+    caption = Column(Text)
+    summary = Column(Text)
+    keywords = Column(ARRAY(Text), nullable=False, default=list)
+    sport = Column(Text)
+    school = Column(Text)
+    content_type = Column(Text)
+    content_types = Column(ARRAY(Text), nullable=False, default=list)
+    categories = Column(ARRAY(Text), nullable=False, default=list)
+    sponsor = Column(Text)
+    athletes = Column(JSONB, nullable=False, default=list)
+    unresolved_handles = Column(ARRAY(Text), nullable=False, default=list)
+    status = Column(Text, nullable=False, default="")
+    qc_state = Column(Text)
+    poster_url = Column(Text)
+    video_url = Column(Text)
+    duration_sec = Column(Float)
+    posted_at = Column(TIMESTAMP(timezone=True))
+    updated_at = Column(TIMESTAMP(timezone=True))
+    removed = Column(Boolean, nullable=False, default=False)
+    first_seen_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+    last_synced_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+
+
+class LibrarySyncRun(Base):
+    """One call to POST /api/library/sync, accepted or refused (migration 036)."""
+    __tablename__ = "library_sync_runs"
+
+    id = Column(Integer, primary_key=True)
+    received_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+    stage = Column(Text)
+    generated_at = Column(TIMESTAMP(timezone=True))
+    received = Column(Integer, nullable=False, default=0)
+    upserted = Column(Integer, nullable=False, default=0)
+    removed = Column(Integer, nullable=False, default=0)
+    ok = Column(Boolean, nullable=False, default=False)
+    error = Column(Text)
