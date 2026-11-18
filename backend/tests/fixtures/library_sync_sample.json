@@ -1,0 +1,406 @@
+{
+  "source": "niltv-app",
+  "stage": "dev",
+  "generated_at": "2026-11-18T15:30:00Z",
+  "full": true,
+  "items": [
+    {
+      "content_id": "ig-17800000000000001",
+      "ig_post_id": "17800000000000001",
+      "channel_id": "ch-niltv",
+      "channel_name": "NIL TV",
+      "title": "Fake State point guard hits the game winner",
+      "caption": "Final seconds at the Example Arena. Sample highlight.",
+      "summary": "A buzzer beater in a test game.",
+      "keywords": [
+        "buzzer beater",
+        "game winner"
+      ],
+      "sport": "Basketball",
+      "school": "Fake State University",
+      "content_type": "highlight",
+      "content_types": [
+        "highlight"
+      ],
+      "categories": [
+        "Game Day"
+      ],
+      "sponsor": null,
+      "athletes": [
+        {
+          "id": "ath-test-001",
+          "name": "Jordan Sample",
+          "handle": "jsample_hoops"
+        }
+      ],
+      "unresolved_handles": [],
+      "status": "published",
+      "qc_state": "ready",
+      "poster_url": "https://media.example.com/library/ig-17800000000000001/poster.jpg",
+      "video_url": "https://media.example.com/library/ig-17800000000000001/video.mp4",
+      "duration_sec": 24.5,
+      "posted_at": "2026-10-20T18:00:00Z",
+      "updated_at": "2026-11-01T12:00:00Z"
+    },
+    {
+      "content_id": "ig-17800000000000002",
+      "ig_post_id": "17800000000000002",
+      "channel_id": "ch-niltv",
+      "channel_name": "NIL TV",
+      "title": "Morning training session",
+      "caption": "Early lift before class. Basketball season is close.",
+      "summary": null,
+      "keywords": [],
+      "sport": "Soccer",
+      "school": "Example College",
+      "content_type": "training",
+      "content_types": [
+        "training",
+        "behind-the-scenes"
+      ],
+      "categories": [
+        "Workouts"
+      ],
+      "sponsor": null,
+      "athletes": [
+        {
+          "id": "ath-test-002",
+          "name": "Casey Placeholder",
+          "handle": "casey_kicks"
+        }
+      ],
+      "unresolved_handles": [],
+      "status": "published",
+      "qc_state": "ready",
+      "poster_url": "https://media.example.com/library/ig-17800000000000002/poster.jpg",
+      "video_url": "https://media.example.com/library/ig-17800000000000002/video.mp4",
+      "duration_sec": 30.0,
+      "posted_at": "2026-10-18T14:00:00Z",
+      "updated_at": "2026-11-01T12:00:00Z"
+    },
+    {
+      "content_id": "ig-17800000000000003",
+      "ig_post_id": "17800000000000003",
+      "channel_id": "ch-niltv",
+      "channel_name": "NIL TV",
+      "title": "Basketball camp recap",
+      "caption": "Kids camp with the team.",
+      "summary": null,
+      "keywords": [],
+      "sport": "Basketball",
+      "school": "Fake State University",
+      "content_type": "recap",
+      "content_types": [
+        "recap"
+      ],
+      "categories": [
+        "Community"
+      ],
+      "sponsor": null,
+      "athletes": [
+        {
+          "id": "ath-test-001",
+          "name": "Jordan Sample",
+          "handle": "jsample_hoops"
+        }
+      ],
+      "unresolved_handles": [],
+      "status": "published",
+      "qc_state": "ready",
+      "poster_url": "https://media.example.com/library/ig-17800000000000003/poster.jpg",
+      "video_url": "https://media.example.com/library/ig-17800000000000003/video.mp4",
+      "duration_sec": 30.0,
+      "posted_at": "2026-10-15T16:30:00Z",
+      "updated_at": "2026-11-01T12:00:00Z"
+    },
+    {
+      "content_id": "yt-sample-video-04",
+      "ig_post_id": null,
+      "channel_id": "ch-campus-sample",
+      "channel_name": "Sample Campus TV",
+      "title": "Locker room interview with the volleyball captain",
+      "caption": "Five questions before the conference opener.",
+      "summary": null,
+      "keywords": [],
+      "sport": "Volleyball",
+      "school": "Sample Tech",
+      "content_type": "interview",
+      "content_types": [],
+      "categories": [
+        "Interviews"
+      ],
+      "sponsor": "Example Drinks Co",
+      "athletes": [
+        {
+          "id": null,
+          "name": "Riley Testcase",
+          "handle": "riley_spikes"
+        }
+      ],
+      "unresolved_handles": [],
+      "status": "published",
+      "qc_state": "needs-review",
+      "poster_url": "https://media.example.com/library/yt-sample-video-04/poster.jpg",
+      "video_url": null,
+      "duration_sec": null,
+      "posted_at": "2026-10-10T20:00:00Z",
+      "updated_at": "2026-11-01T12:00:00Z"
+    },
+    {
+      "content_id": "upload-sample-05",
+      "ig_post_id": null,
+      "channel_id": null,
+      "channel_name": null,
+      "title": "Untitled upload",
+      "caption": null,
+      "summary": null,
+      "keywords": [],
+      "sport": null,
+      "school": null,
+      "content_type": null,
+      "content_types": [],
+      "categories": [],
+      "sponsor": null,
+      "athletes": [],
+      "unresolved_handles": [
+        "unknown_fan_account"
+      ],
+      "status": "published",
+      "qc_state": null,
+      "poster_url": null,
+      "video_url": null,
+      "duration_sec": null,
+      "posted_at": null,
+      "updated_at": null
+    },
+    {
+      "content_id": "ig-17800000000000006",
+      "ig_post_id": "17800000000000006",
+      "channel_id": "ch-niltv",
+      "channel_name": "NIL TV",
+      "title": "Withdrawn clip from the archive",
+      "caption": "This clip was pulled by staff.",
+      "summary": null,
+      "keywords": [],
+      "sport": "Football",
+      "school": "Example College",
+      "content_type": "highlight",
+      "content_types": [
+        "highlight"
+      ],
+      "categories": [
+        "Game Day"
+      ],
+      "sponsor": null,
+      "athletes": [],
+      "unresolved_handles": [],
+      "status": "withdrawn",
+      "qc_state": "ready",
+      "poster_url": "https://media.example.com/library/ig-17800000000000006/poster.jpg",
+      "video_url": "https://media.example.com/library/ig-17800000000000006/video.mp4",
+      "duration_sec": 30.0,
+      "posted_at": "2026-09-01T12:00:00Z",
+      "updated_at": "2026-11-01T12:00:00Z"
+    },
+    {
+      "content_id": "ig-17800000000000007",
+      "ig_post_id": "17800000000000007",
+      "channel_id": "ch-niltv",
+      "channel_name": "NIL TV",
+      "title": "Practice footage needing labels",
+      "caption": "Raw practice clip.",
+      "summary": null,
+      "keywords": [],
+      "sport": null,
+      "school": null,
+      "content_type": null,
+      "content_types": [],
+      "categories": [],
+      "sponsor": null,
+      "athletes": [],
+      "unresolved_handles": [],
+      "status": "published",
+      "qc_state": "needs-tagging",
+      "poster_url": "https://media.example.com/library/ig-17800000000000007/poster.jpg",
+      "video_url": "https://media.example.com/library/ig-17800000000000007/video.mp4",
+      "duration_sec": 30.0,
+      "posted_at": "2026-10-05T12:00:00Z",
+      "updated_at": "2026-11-01T12:00:00Z"
+    },
+    {
+      "content_id": "ig-17800000000000008",
+      "ig_post_id": "17800000000000008",
+      "channel_id": "ch-niltv",
+      "channel_name": "NIL TV",
+      "title": "Lacrosse senior night",
+      "caption": "Senior night at Sample Field.",
+      "summary": null,
+      "keywords": [
+        "senior night"
+      ],
+      "sport": "Lacrosse",
+      "school": "Sample Tech",
+      "content_type": "highlight",
+      "content_types": [
+        "highlight",
+        "feature"
+      ],
+      "categories": [
+        "Game Day",
+        "Features"
+      ],
+      "sponsor": "Example Drinks Co",
+      "athletes": [
+        {
+          "id": "ath-test-004",
+          "name": "Morgan Example",
+          "handle": "morgan_lax"
+        }
+      ],
+      "unresolved_handles": [],
+      "status": "published",
+      "qc_state": "ready",
+      "poster_url": "https://media.example.com/library/ig-17800000000000008/poster.jpg",
+      "video_url": "https://media.example.com/library/ig-17800000000000008/video.mp4",
+      "duration_sec": 58.0,
+      "posted_at": "2026-10-12T23:00:00Z",
+      "updated_at": "2026-11-01T12:00:00Z"
+    },
+    {
+      "content_id": "ig-17800000000000009",
+      "ig_post_id": "17800000000000009",
+      "channel_id": "ch-niltv",
+      "channel_name": "NIL TV",
+      "title": "Track meet relay finish",
+      "caption": "4x100 anchor leg.",
+      "summary": null,
+      "keywords": [],
+      "sport": "Track and Field",
+      "school": "Example College",
+      "content_type": "highlight",
+      "content_types": [
+        "highlight"
+      ],
+      "categories": [
+        "Game Day"
+      ],
+      "sponsor": null,
+      "athletes": [
+        {
+          "id": "ath-test-002",
+          "name": "Casey Placeholder",
+          "handle": "casey_kicks"
+        },
+        {
+          "id": "ath-test-005",
+          "name": "Taylor Mock",
+          "handle": "taylor_runs"
+        }
+      ],
+      "unresolved_handles": [],
+      "status": "published",
+      "qc_state": "ready",
+      "poster_url": "https://media.example.com/library/ig-17800000000000009/poster.jpg",
+      "video_url": "https://media.example.com/library/ig-17800000000000009/video.mp4",
+      "duration_sec": 30.0,
+      "posted_at": "2026-10-08T15:00:00Z",
+      "updated_at": "2026-11-01T12:00:00Z"
+    },
+    {
+      "content_id": "ig-17800000000000010",
+      "ig_post_id": "17800000000000010",
+      "channel_id": "ch-niltv",
+      "channel_name": "NIL TV",
+      "title": "Study hall tips from a student athlete",
+      "caption": "How to keep grades up in season.",
+      "summary": "Time management advice.",
+      "keywords": [
+        "academics",
+        "study"
+      ],
+      "sport": null,
+      "school": null,
+      "content_type": "lifestyle",
+      "content_types": [
+        "lifestyle"
+      ],
+      "categories": [
+        "Mindset"
+      ],
+      "sponsor": null,
+      "athletes": [],
+      "unresolved_handles": [],
+      "status": "published",
+      "qc_state": "needs-review",
+      "poster_url": "https://media.example.com/library/ig-17800000000000010/poster.jpg",
+      "video_url": "https://media.example.com/library/ig-17800000000000010/video.mp4",
+      "duration_sec": 30.0,
+      "posted_at": "2026-10-02T13:00:00Z",
+      "updated_at": "2026-11-01T12:00:00Z"
+    },
+    {
+      "content_id": "ig-17800000000000011",
+      "ig_post_id": "17800000000000011",
+      "channel_id": "ch-niltv",
+      "channel_name": "NIL TV",
+      "title": "Sideline mic'd up",
+      "caption": "Mic'd up at the homecoming game.",
+      "summary": null,
+      "keywords": [],
+      "sport": "Football",
+      "school": "Fake State University",
+      "content_type": "feature",
+      "content_types": [
+        "feature"
+      ],
+      "categories": [
+        "Features"
+      ],
+      "sponsor": "Sample Apparel",
+      "athletes": [
+        {
+          "id": "ath-test-006",
+          "name": "Avery Fixture",
+          "handle": "avery_fb"
+        }
+      ],
+      "unresolved_handles": [],
+      "status": "published",
+      "qc_state": "ready",
+      "poster_url": "https://media.example.com/library/ig-17800000000000011/poster.jpg",
+      "video_url": "https://media.example.com/library/ig-17800000000000011/video.mp4",
+      "duration_sec": 30.0,
+      "posted_at": "2026-10-25T21:00:00Z",
+      "updated_at": "2026-11-01T12:00:00Z"
+    },
+    {
+      "content_id": "ig-17800000000000012",
+      "ig_post_id": "17800000000000012",
+      "channel_id": "ch-niltv",
+      "channel_name": "NIL TV",
+      "title": "Swim relay practice",
+      "caption": null,
+      "summary": null,
+      "keywords": [],
+      "sport": "Swimming",
+      "school": "Sample Tech",
+      "content_type": "training",
+      "content_types": [
+        "training"
+      ],
+      "categories": [
+        "Workouts"
+      ],
+      "sponsor": null,
+      "athletes": [],
+      "unresolved_handles": [],
+      "status": "published",
+      "qc_state": "ready",
+      "poster_url": "https://media.example.com/library/ig-17800000000000012/poster.jpg",
+      "video_url": null,
+      "duration_sec": 30.0,
+      "posted_at": "2026-09-28T11:00:00Z",
+      "updated_at": "2026-11-01T12:00:00Z"
+    }
+  ]
+}

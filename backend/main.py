@@ -7,7 +7,7 @@ from backend.auth import require_api_key
 from backend.config import get_settings
 from backend.onboarding import vote_outbox
 
-from backend.routers import athletes, snapshots, posts, zoomph, web_analytics, trueblue, reports, brand, ambassadors, network_screen, campus_channels, applications, community_star, community_star_voting, users
+from backend.routers import athletes, snapshots, posts, zoomph, web_analytics, trueblue, reports, brand, ambassadors, network_screen, campus_channels, applications, community_star, community_star_voting, users, library
 
 # The interactive docs and OpenAPI schema expose the full route map and auth
 # model, so they are served outside production only.
@@ -71,6 +71,8 @@ app.include_router(community_star.public_router, prefix="/api/community-star", t
 app.include_router(community_star.router, prefix="/api/community-star", tags=["community-star"])
 app.include_router(community_star_voting.public_router, prefix="/api/community-star", tags=["community-star"])
 app.include_router(community_star_voting.router, prefix="/api/community-star", tags=["community-star"])
+# The app's ingest Lambda posts its content snapshot to /api/library/sync (key, no account).
+app.include_router(library.router, prefix="/api/library", tags=["library"])
 app.include_router(users.auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 
