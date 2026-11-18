@@ -162,8 +162,7 @@ Hosting and third-party integration setup are not covered in this repository.
 
 ## Environment Variables
 
-Copy `.env.example` to `.env` 
-`.env` is gitignored — never commit real values;
+Copy `.env.example` to `.env`. It is gitignored. Never commit real values.
 
 | Variable | Description |
 |---|---|
@@ -175,7 +174,6 @@ Copy `.env.example` to `.env`
 | `AWS_S3_BUCKET` | S3 bucket name for JSON backups |
 | `AWS_SNS_TOPIC_ARN` | SNS topic ARN for failure email alerts |
 | `DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD` | Dashboard login (password also acts as the API key) |
-
 | `YOUTUBE_API_KEY` | YouTube Data API v3 key (public counts). Empty = the YouTube job does nothing |
 | `YOUTUBE_CHANNEL_IDS` | Channels to track, comma-separated. Empty = the NIL TV channel |
 | `YOUTUBE_OAUTH_CLIENT_ID` / `YOUTUBE_OAUTH_CLIENT_SECRET` / `YOUTUBE_OAUTH_REFRESH_TOKEN` | YouTube Analytics (watch time, retention). See [YouTube](#youtube) |
@@ -187,7 +185,9 @@ The frontend reads `INTERNAL_API_URL`, `DASHBOARD_USERNAME`, `DASHBOARD_PASSWORD
 and (optionally) `DASHBOARD_API_KEY` from `frontend/.env.local` on your machine
 and from the Amplify branch settings on dev and prod. `DASHBOARD_API_KEY` must
 match the backend it points at; `/api/health` on the deployed site tells you if
-it does not.
+it does not. `NEXT_PUBLIC_STAFF_ADMIN_URL` (optional) is the app's staff admin
+tool, linked from the Library's tagging notes; empty hides the links. See
+[frontend/README.md](frontend/README.md).
 
 ---
 
@@ -202,13 +202,55 @@ it does not.
 | GET | `/api/posts/athletes/{id}` | Recent IG posts |
 | GET | `/api/zoomph` | Zoomph posts (filter with `?platform=Instagram`) |
 | GET | `/api/zoomph/summary` | Aggregated stats by platform |
-
 | GET | `/api/youtube/summary` | YouTube channel totals, 7-day / 28-day / month changes, daily series |
 | GET | `/api/youtube/videos` | YouTube uploads (`sort`, `order`, `format=all\|shorts\|long`, `q`, `page`) |
 | GET | `/api/youtube/status` | Is YouTube configured, last pull, is Analytics connected |
 | GET | `/api/youtube/analytics` | Watch time and retention, or `{"connected": false}` |
+| GET | `/api/library/` | Library clips. Filters: `q`, `sport`, `school`, `channel`, `content_type`, `category`, `sponsor`, `athlete` (handle or app id), `qc_state`, `needs_tagging`, `posted_from`, `posted_to` (inclusive days), `has_video`, `include_removed`. `sort=relevance\|newest\|views\|engaged`, `limit`, `offset` |
+| GET | `/api/library/facets` | Value counts per filter under the other filters |
+| GET | `/api/library/status` | Last sync run, last good run, clip counts by QC state |
+| GET | `/api/library/{content_id}` | One clip with its Instagram numbers |
+| POST | `/api/library/sync` | Snapshot from the app's ingest. See [Library sync](#library-sync) |
+| GET | `/api/athlete-directory/` | Roster, ambassadors and signups merged. Filters: `q`, `sport`, `school`, `campus`, `status`, `source`, `partner_consent`, `min_followers`, `max_followers`, `has_content`, `include_declined` (admins only), `sort`, `limit`, `offset` |
+| GET | `/api/athlete-directory/facets` | Sports, schools, campuses and statuses with counts (`include_declined`, admins only) |
+| GET | `/api/athlete-directory/{key}` | One person: history, NIL TV posts, Library clips; contact fields for admins only |
+| GET | `/api/athlete-directory/export.csv` | Matching people with contact fields. Admins only |
 
 Interactive docs: `http://localhost:8000/docs` on the local stack.
+
+### Library sync
+
+The NIL TV app's ingest Lambda calls `POST /api/library/sync` after each
+hourly ingest run. Each app stage posts to its own dashboard (dev to the dev
+API, prod to the prod API). It sends the backend API key as `X-API-Key` and no
+account header, so the backend treats it as a service caller. Admin accounts
+may also call it; general and demo accounts may not.
+
+The body is the full library (`full: true`, up to 5,000 clips). Clips missing
+from a full snapshot are marked removed for that stage only. A refused sync
+(bad JSON, invalid body, too many clips) is recorded and shows on the Library
+status line. The call is idempotent, so a retry is safe.
+
+A full snapshot is about 2 MB today and grows with the library. nginx in
+front of the API must accept it: set `client_max_body_size` to at least
+`8m` on the API server block. The nginx default (1 MB) answers 413 before the
+request reaches the backend, and that refusal is not recorded.
+
+Library clip numbers come from `niltv_network_posts` by Instagram media id.
+When the network pull has no row, `brand_posts` (the owned brand accounts'
+pull) fills in. A network row always wins. A number nobody pulled stays null,
+never 0.
+
+### Athlete directory defaults
+
+- Declined signups (people whose only record is a declined application) are
+  hidden from the list, facets and export. Admins bring them back with
+  `include_declined=true` (the Include declined filter) and can still open a
+  declined person's page. Anyone else gets 403 for that flag and 404 for that
+  page. The library links no clip to a declined person.
+- NIL deals done, NIL deals wanted and the free-text content description are
+  admin-only. General accounts get null for them and see sport, school,
+  socials, followers and status.
 
 ---
 

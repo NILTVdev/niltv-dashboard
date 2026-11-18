@@ -6,6 +6,13 @@ roster pages); demo is refused there. Contact fields and free-text application
 answers are added to the detail response for admins (and service callers)
 only, and the CSV export is admin-only, so a general account never receives
 them, whatever the page shows.
+
+Defaults enforced here, not in the page:
+  * Declined signups are left out of the list, the facets and the detail
+    route. ``include_declined=true`` brings them back, for admins only (403
+    for anyone else).
+  * directory.ADMIN_ONLY_FIELDS (NIL deals done and wanted, content
+    description) are null in every response to a non-admin.
 """
 
 import csv
@@ -53,6 +60,7 @@ class PersonOut(BaseModel):
     youtube_subscribers: Optional[int]       # self-reported
     x_handle: Optional[str]
     profile_pic_url: Optional[str]
+    # Admins only (directory.ADMIN_ONLY_FIELDS). Null for every other role.
     nil_deals_done: Optional[str]
     nil_deals_wanted: Optional[str]
     content_type: Optional[str]
@@ -157,7 +165,16 @@ def is_admin(request: Request) -> bool:
     return user is None or user.role == "admin"
 
 
+def person_out(p: dict, admin: bool) -> PersonOut:
+    out = PersonOut(**p)
+    if not admin:
+        for name in directory.ADMIN_ONLY_FIELDS:
+            setattr(out, name, None)
+    return out
+
+
 def _query(
+    request: Request,
     q: Optional[str] = Query(None, max_length=200, description="name, handle, school or sport contains"),
     sport: Optional[str] = Query(None, max_length=200),
     school: Optional[str] = Query(None, max_length=200),
@@ -168,8 +185,11 @@ def _query(
     min_followers: Optional[int] = Query(None, ge=0),
     max_followers: Optional[int] = Query(None, ge=0),
     has_content: Optional[bool] = Query(None, description="has NIL TV collab posts"),
+    include_declined: bool = Query(False, description="admins only: also list declined signups"),
     sort: str = Query("followers", description=" | ".join(directory.SORTS)),
 ) -> directory.Query:
+    if include_declined and not is_admin(request):
+        raise HTTPException(status_code=403, detail="Your account does not have access to this")
     if status is not None and status not in directory.STATUSES:
         raise HTTPException(status_code=400, detail=f"status must be one of {', '.join(directory.STATUSES)}")
     if source is not None and source not in directory.SOURCES:
@@ -178,11 +198,13 @@ def _query(
         raise HTTPException(status_code=400, detail=f"sort must be one of {', '.join(directory.SORTS)}")
     return directory.Query(q=q, sport=sport, school=school, campus=campus, status=status, source=source,
                            partner_consent=partner_consent, min_followers=min_followers,
-                           max_followers=max_followers, has_content=has_content, sort=sort)
+                           max_followers=max_followers, has_content=has_content,
+                           include_declined=include_declined, sort=sort)
 
 
 @router.get("/", response_model=DirectoryPage)
 def list_people(
+    request: Request,
     f: directory.Query = Depends(_query),
     limit: int = Query(50, ge=1, le=MAX_LIMIT),
     offset: int = Query(0, ge=0),
@@ -190,12 +212,20 @@ def list_people(
 ):
     matched = directory.apply(directory.build_directory(db), f)
     return DirectoryPage(total=len(matched), limit=limit, offset=offset,
-                         items=[PersonOut(**p) for p in matched[offset:offset + limit]])
+                         items=[person_out(p, is_admin(request)) for p in matched[offset:offset + limit]])
 
 
 @router.get("/facets", response_model=FacetsOut)
-def get_facets(db: Session = Depends(get_db)):
+def get_facets(
+    request: Request,
+    include_declined: bool = Query(False, description="admins only: count declined signups too"),
+    db: Session = Depends(get_db),
+):
+    if include_declined and not is_admin(request):
+        raise HTTPException(status_code=403, detail="Your account does not have access to this")
     people = directory.build_directory(db)
+    if not include_declined:
+        people = [p for p in people if not directory.is_declined(p)]
     return FacetsOut(total=len(people), **directory.facets(people))
 
 
@@ -282,12 +312,14 @@ def _posts(db: Session, person: dict) -> list[PostOut]:
 
 @router.get("/{key}", response_model=PersonDetailOut)
 def get_person(key: str, request: Request, db: Session = Depends(get_db)):
+    admin = is_admin(request)
     person = directory.resolve_key(directory.build_directory(db), key)
-    if person is None:
+    # A declined signup is hidden from non-admins here too, not only in the list.
+    if person is None or (directory.is_declined(person) and not admin):
         raise HTTPException(status_code=404, detail="Athlete not found")
     clips_total, clips = clips_for_handles(db, person["ig_handles"])
-    detail = PersonDetailOut(person=PersonOut(**person), history=_history(db, person), posts=_posts(db, person),
-                             clips=clips, clips_total=clips_total)
-    if is_admin(request):
+    detail = PersonDetailOut(person=person_out(person, admin), history=_history(db, person),
+                             posts=_posts(db, person), clips=clips, clips_total=clips_total)
+    if admin:
         detail.applications = [ApplicationPrivateOut(**a) for a in directory.private_details(db, person)]
     return detail

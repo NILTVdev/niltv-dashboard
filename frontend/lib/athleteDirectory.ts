@@ -50,13 +50,16 @@ export interface DirectoryFilters {
   status: DirectoryStatus | "";
   partner_consent: "" | "true" | "false";
   followers: string; // a FOLLOWER_RANGES key
+  /** Admins only: also list declined signups. The backend hides them by
+   * default and refuses this flag (403) for any other role. */
+  include_declined: boolean;
   sort: DirectorySort;
   page: number; // 0-based
 }
 
 export const EMPTY_FILTERS: DirectoryFilters = {
   q: "", sport: "", school: "", campus: "", status: "", partner_consent: "", followers: "",
-  sort: "followers", page: 0,
+  include_declined: false, sort: "followers", page: 0,
 };
 
 const STATUSES = Object.keys(STATUS_LABEL) as DirectoryStatus[];
@@ -80,6 +83,7 @@ export function filtersFromParams(params: ParamSource): DirectoryFilters {
     status: STATUSES.includes(status) ? status : "",
     partner_consent: consent === "true" || consent === "false" ? consent : "",
     followers: FOLLOWER_RANGES.some((r) => r.key === followers) ? followers : "",
+    include_declined: pick("include_declined") === "true",
     sort: SORTS.includes(sort) ? sort : EMPTY_FILTERS.sort,
     page: Number.isFinite(page) && page > 0 ? page : 0,
   };
@@ -92,6 +96,7 @@ export function filtersToPageQuery(f: DirectoryFilters): string {
     const v = f[name].trim();
     if (v) p.set(name, v);
   }
+  if (f.include_declined) p.set("include_declined", "true");
   if (f.sort !== EMPTY_FILTERS.sort) p.set("sort", f.sort);
   if (f.page > 0) p.set("page", String(f.page));
   return p.toString();
@@ -108,6 +113,7 @@ export function filtersToApiQuery(f: DirectoryFilters, paged = true): string {
   const range = FOLLOWER_RANGES.find((r) => r.key === f.followers);
   if (range && "min" in range) p.set("min_followers", String(range.min));
   if (range && "max" in range) p.set("max_followers", String(range.max));
+  if (f.include_declined) p.set("include_declined", "true");
   p.set("sort", f.sort);
   if (paged) {
     p.set("limit", String(PAGE_SIZE));
@@ -118,7 +124,7 @@ export function filtersToApiQuery(f: DirectoryFilters, paged = true): string {
 
 export function activeFilterCount(f: DirectoryFilters): number {
   return (["sport", "school", "campus", "status", "partner_consent", "followers"] as const)
-    .filter((name) => f[name] !== "").length;
+    .filter((name) => f[name] !== "").length + (f.include_declined ? 1 : 0);
 }
 
 /** Up to two initials for the photo placeholder. */

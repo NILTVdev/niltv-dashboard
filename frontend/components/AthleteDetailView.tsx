@@ -10,7 +10,7 @@ import { fmt, fmtDate } from "@/lib/utils";
 import { Poster } from "./LibraryView";
 import { answerRows, clipsTitle, socialUrl } from "@/lib/athleteDirectory";
 import { LIBRARY } from "@/lib/access";
-import { qcLabel } from "@/lib/library";
+import { libraryHrefForAthlete, qcLabel } from "@/lib/library";
 import type { DirectoryApplication, DirectoryDetail, DirectorySource, LibraryItem, Post } from "@/lib/types";
 
 interface Props {
@@ -211,11 +211,17 @@ export default function AthleteDetailView({ detail, gridPosts }: Props) {
           <Social label="X" handle={p.x_handle} href={socialUrl("x", p.x_handle)} />
         </Card>
 
-        <Card title="NIL interests">
+        <Card title={applications ? "NIL interests" : "Signup"}>
           <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Field label="Deals done">{p.nil_deals_done}</Field>
-            <Field label="Deals wanted">{p.nil_deals_wanted}</Field>
-            <Field label="Content type">{p.content_type}</Field>
+            {/* Deal and content answers reach admins only (the backend sends
+                null to everyone else), so the rows show for admins only. */}
+            {applications && (
+              <>
+                <Field label="Deals done">{p.nil_deals_done}</Field>
+                <Field label="Deals wanted">{p.nil_deals_wanted}</Field>
+                <Field label="Content type">{p.content_type}</Field>
+              </>
+            )}
             <Field label="Partner consent">{yesNo(p.partner_consent)}</Field>
             <Field label="Applied">{p.applied_at ? fmtDate(p.applied_at) : null}</Field>
             <Field label="Application status">{p.application_status}</Field>
@@ -237,9 +243,17 @@ export default function AthleteDetailView({ detail, gridPosts }: Props) {
 
       <Card title={clipsTitle(clips.length, clipsTotal)}>
         {clips.length ? (
-          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {clips.map((c) => <ClipRow key={c.content_id} item={c} />)}
-          </ul>
+          <>
+            <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {clips.map((c) => <ClipRow key={c.content_id} item={c} />)}
+            </ul>
+            {clipsTotal > clips.length && p.ig_handle && (
+              <Link href={libraryHrefForAthlete(p.ig_handle)}
+                    className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-[var(--brand)] underline-offset-2 hover:underline">
+                See all in Library
+              </Link>
+            )}
+          </>
         ) : (
           <p className="text-sm text-[#94a3b8]">
             No clips in the <Link href={LIBRARY} className="underline underline-offset-2">Library</Link> tag

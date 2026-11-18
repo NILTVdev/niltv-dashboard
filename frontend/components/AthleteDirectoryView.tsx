@@ -46,6 +46,10 @@ export function SelfReported() {
   );
 }
 
+function DeclinedNote() {
+  return <span className="ml-1 text-[11px] font-medium text-[#94a3b8]">declined</span>;
+}
+
 function Followers({ person }: { person: DirectoryPerson }) {
   const { text, selfReported } = followerLabel(person);
   return (
@@ -59,8 +63,10 @@ function Followers({ person }: { person: DirectoryPerson }) {
 const selectClass =
   "min-w-0 rounded-lg border border-[#e2e8f0] bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand)]";
 
-export default function AthleteDirectoryView({ initialFilters, initialPage, facets, isAdmin }: Props) {
+export default function AthleteDirectoryView({ initialFilters, initialPage, facets: initialFacets, isAdmin }: Props) {
   const [filters, setFilters] = useState<DirectoryFilters>(initialFilters);
+  const [facets, setFacets] = useState<DirectoryFacets | null>(initialFacets);
+  const facetsFor = useRef(initialFilters.include_declined);
   const [search, setSearch] = useState(initialFilters.q);
   const [data, setData] = useState<DirectoryPage | null>(initialPage);
   const [error, setError] = useState<string | null>(initialPage ? null : "The athlete list did not load.");
@@ -108,6 +114,19 @@ export default function AthleteDirectoryView({ initialFilters, initialPage, face
       });
     return () => ctrl.abort();
   }, [apiQuery, settledQuery]);
+
+  // Facet counts include declined signups only while an admin asks for them.
+  useEffect(() => {
+    if (facetsFor.current === filters.include_declined) return;
+    facetsFor.current = filters.include_declined;
+    const ctrl = new AbortController();
+    fetch(`/api/proxy/api/athlete-directory/facets${filters.include_declined ? "?include_declined=true" : ""}`,
+          { signal: ctrl.signal })
+      .then((r) => (r.ok ? (r.json() as Promise<DirectoryFacets>) : null))
+      .then((f) => { if (f) setFacets(f); })
+      .catch(() => {});
+    return () => ctrl.abort();
+  }, [filters.include_declined]);
 
   const set = <K extends keyof DirectoryFilters>(name: K, value: DirectoryFilters[K]) =>
     setFilters((f) => ({ ...f, [name]: value, page: 0 }));
@@ -192,6 +211,20 @@ export default function AthleteDirectoryView({ initialFilters, initialPage, face
               {label}
             </button>
           ))}
+          {isAdmin && (
+            <>
+              <span className="hidden h-4 w-px bg-[#e2e8f0] sm:inline-block" />
+              <button type="button" aria-pressed={filters.include_declined}
+                      onClick={() => set("include_declined", !filters.include_declined)}
+                      title="Declined signups are hidden by default. Admins only."
+                      className={cn("rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                        filters.include_declined
+                          ? "border-[var(--brand)] bg-[var(--brand)] text-white"
+                          : "border-[#e2e8f0] text-[#475569] hover:border-[var(--brand-light)]")}>
+                Include declined
+              </button>
+            </>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#f1f5f9] pt-3">
@@ -235,7 +268,10 @@ export default function AthleteDirectoryView({ initialFilters, initialPage, face
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
                       <p className="truncate font-semibold text-[#0f172a]">{p.display_name}</p>
-                      <StatusBadge status={p.status} />
+                      <span className="flex shrink-0 items-center">
+                        <StatusBadge status={p.status} />
+                        {p.application_status === "declined" && <DeclinedNote />}
+                      </span>
                     </div>
                     <p className="truncate text-xs text-[#64748b]">
                       {[p.sport, p.school].filter(Boolean).join(" · ") || "No sport or school yet"}
@@ -276,7 +312,10 @@ export default function AthleteDirectoryView({ initialFilters, initialPage, face
                     </td>
                     <td className="px-4 py-2.5 text-[#475569]">{p.sport ?? "—"}</td>
                     <td className="px-4 py-2.5 text-[#475569]">{p.school ?? "—"}</td>
-                    <td className="px-4 py-2.5"><StatusBadge status={p.status} /></td>
+                    <td className="px-4 py-2.5">
+                      <StatusBadge status={p.status} />
+                      {p.application_status === "declined" && <DeclinedNote />}
+                    </td>
                     <td className="px-4 py-2.5 text-[#475569]">{p.ig_handle ? `@${p.ig_handle}` : "—"}</td>
                     <td className="px-4 py-2.5 text-right"><Followers person={p} /></td>
                     <td className="px-4 py-2.5 text-right tabular-nums">{fmt(p.collab_views)}</td>

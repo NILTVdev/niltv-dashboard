@@ -12,7 +12,7 @@ from sqlalchemy import text
 from backend import accounts
 from backend.database import SessionLocal
 from backend.main import app
-from backend.models import DashboardUser, LibraryItem, LibrarySyncRun, NiltvNetworkPost
+from backend.models import BrandPost, DashboardUser, LibraryItem, LibrarySyncRun, NiltvNetworkPost
 
 client = TestClient(app)
 KEY = {"X-API-Key": "test"}
@@ -27,6 +27,7 @@ def _clean(db):
     db.query(LibraryItem).delete()
     db.query(LibrarySyncRun).delete()
     db.query(NiltvNetworkPost).filter(NiltvNetworkPost.post_id.in_(POST_IDS)).delete(synchronize_session=False)
+    db.query(BrandPost).filter(BrandPost.ig_post_id.in_(POST_IDS)).delete(synchronize_session=False)
     db.query(DashboardUser).filter(DashboardUser.email.in_(TEST_EMAILS)).delete(synchronize_session=False)
     db.commit()
 
@@ -104,7 +105,7 @@ def test_sync_keeps_nulls_and_empty_lists(db):
     bare = client.get("/api/library/upload-sample-05", headers=KEY).json()
     assert bare["channel_id"] is None and bare["posted_at"] is None and bare["qc_state"] is None
     assert bare["keywords"] == [] and bare["athletes"] == [] and bare["unresolved_handles"] == ["unknown_fan_account"]
-    assert bare["performance"] == {"matched": False, "views": None, "likes": None, "comments": None,
+    assert bare["performance"] == {"matched": False, "source": None, "views": None, "likes": None, "comments": None,
                                    "shares": None, "saves": None, "reach": None, "interactions": None,
                                    "permalink": None}
 
@@ -265,6 +266,19 @@ def test_filters(seeded, params, expected):
     assert set(ids(params)) == expected
 
 
+def test_athlete_filter_matches_unresolved_handles_too(seeded):
+    assert ids({"athlete": "Unknown_Fan_Account"}) == ["upload-sample-05"]
+
+
+def test_athlete_facet_lists_tagged_handles(seeded):
+    athletes = client.get("/api/library/facets", headers=KEY).json()["athlete"]
+    assert {"value": "jsample_hoops", "label": "Jordan Sample", "count": 2} in athletes
+    assert {f["value"]: f["count"] for f in athletes}["casey_kicks"] == 2
+    # Its own selection does not hide the other athletes.
+    picked = client.get("/api/library/facets", headers=KEY, params={"athlete": "jsample_hoops"}).json()["athlete"]
+    assert {f["value"] for f in picked} == {f["value"] for f in athletes}
+
+
 def test_has_video_true_and_paging(seeded):
     assert len(ids({"has_video": "true"})) == len(FIXTURE["items"]) - 3
     r = client.get(LIST, headers=KEY, params={"limit": 5, "offset": 10}).json()
@@ -284,13 +298,50 @@ def test_sorts(seeded):
 def test_performance_is_null_when_unknown_and_zero_when_zero(seeded):
     perf = {i["content_id"]: i["performance"] for i in
             client.get(LIST, headers=KEY, params={"limit": 200}).json()["items"]}
-    assert perf[ig(1)] == {"matched": True, "views": 12000, "likes": 800, "comments": 40, "shares": 10,
+    assert perf[ig(1)] == {"matched": True, "source": "network", "views": 12000, "likes": 800, "comments": 40, "shares": 10,
                                 "saves": 5, "reach": None, "interactions": 855,
                                 "permalink": "https://www.instagram.com/reel/FAKE0001/"}
     assert perf[ig(2)]["matched"] is True and perf[ig(2)]["views"] is None and perf[ig(2)]["interactions"] is None
     assert perf[ig(3)]["views"] == 0 and perf[ig(3)]["interactions"] == 0
     assert perf[ig(9)]["matched"] is False and perf[ig(9)]["views"] is None   # IG id, not pulled yet
     assert perf["yt-sample-video-04"]["matched"] is False                     # not from Instagram
+
+
+def test_brand_posts_fill_in_when_the_network_pull_has_no_row(db):
+    """Network match, brand-only match, both (network wins), neither (nulls)."""
+    sync(FIXTURE)
+    network_only, brand_only, both, neither = POST_IDS[5], POST_IDS[6], POST_IDS[9], POST_IDS[11]
+    db.add_all([
+        NiltvNetworkPost(post_id=network_only, views=300, likes=30, comments=3,
+                         permalink="https://www.instagram.com/reel/FAKENET1/"),
+        BrandPost(account="niltv", ig_post_id=brand_only, views=900, like_count=90, comment_count=9,
+                  shares=None, saves=4, reach=1500, permalink="https://www.instagram.com/reel/FAKEBRAND1/"),
+        # Both pulls have it: the network row wins, even its unknown (null) views.
+        NiltvNetworkPost(post_id=both, views=None, likes=50, comments=5,
+                         permalink="https://www.instagram.com/reel/FAKENET2/"),
+        BrandPost(account="niltv", ig_post_id=both, views=7777, like_count=1, comment_count=1,
+                  permalink="https://www.instagram.com/reel/FAKEBRAND2/"),
+    ])
+    db.commit()
+    perf = {i["content_id"]: i["performance"] for i in
+            client.get(LIST, headers=KEY, params={"limit": 200}).json()["items"]}
+
+    assert perf["ig-" + network_only] == {
+        "matched": True, "source": "network", "views": 300, "likes": 30, "comments": 3, "shares": None,
+        "saves": None, "reach": None, "interactions": 33, "permalink": "https://www.instagram.com/reel/FAKENET1/"}
+    assert perf["ig-" + brand_only] == {
+        "matched": True, "source": "brand", "views": 900, "likes": 90, "comments": 9, "shares": None,
+        "saves": 4, "reach": 1500, "interactions": 103, "permalink": "https://www.instagram.com/reel/FAKEBRAND1/"}
+    assert perf["ig-" + both] == {
+        "matched": True, "source": "network", "views": None, "likes": 50, "comments": 5, "shares": None,
+        "saves": None, "reach": None, "interactions": 55, "permalink": "https://www.instagram.com/reel/FAKENET2/"}
+    assert perf["ig-" + neither] == {
+        "matched": False, "source": None, "views": None, "likes": None, "comments": None, "shares": None,
+        "saves": None, "reach": None, "interactions": None, "permalink": None}
+
+    # The detail route and the views sort use the same join.
+    assert client.get(f"/api/library/ig-{brand_only}", headers=KEY).json()["performance"]["source"] == "brand"
+    assert ids({"sort": "views"})[0] == "ig-" + brand_only
 
 
 def test_detail_and_404(seeded):

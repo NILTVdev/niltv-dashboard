@@ -523,3 +523,95 @@ def test_cache_sees_changes(db, seeded):
     db.add(Application(email="late@example.com", first_name="Late", last_name="Signup"))
     db.commit()
     assert client.get(f"{BASE}/", headers=KEY).json()["total"] == 4
+
+
+# ── Product defaults: declined signups and admin-only answers ─────────────────
+
+@pytest.fixture()
+def with_declined(db, seeded):
+    """Ivy gets NIL answers; a declined applicant, and an ambassador whose own
+    signup was declined, join the seeded people."""
+    db.query(Application).filter(Application.email == "ivy@example.com").update({
+        "nil_deals_done": "Synthetic deal history", "nil_deals_wanted": "Synthetic deal wish",
+        "content_type": "Synthetic content description"})
+    db.add(Application(email="dee@example.com", first_name="Dee", last_name="Declined", sport="Tennis",
+                       university="Declined U", instagram="@dee.declined", status="declined"))
+    amb2 = Ambassador(ig_username="kept.amb", display_name="Kept Ambassador", status="confirmed")
+    db.add(amb2)
+    db.flush()
+    db.add(Application(email="kept@example.com", first_name="Kept", last_name="Ambassador",
+                       instagram="@kept.amb", status="declined", ambassador_id=amb2.id))
+    db.commit()
+    dee = db.query(Application.id).filter(Application.email == "dee@example.com").scalar()
+    return {**seeded, "dee": f"app-{dee}"}
+
+
+def _names(params=None, headers=KEY):
+    r = client.get(f"{BASE}/", headers=headers, params={"limit": 500, **(params or {})})
+    assert r.status_code == 200, r.text
+    return {p["display_name"] for p in r.json()["items"]}
+
+
+def test_declined_signups_are_hidden_by_default(db, with_declined):
+    names = _names()
+    assert "Dee Declined" not in names
+    assert "Kept Ambassador" in names  # an ambassador stays, whatever an old signup says
+    assert client.get(f"{BASE}/facets", headers=KEY).json()["total"] == len(names)
+    assert "Declined U" not in {v["value"] for v in client.get(f"{BASE}/facets", headers=KEY).json()["school"]}
+    assert "Dee Declined" in _names({"include_declined": "true"})
+    assert client.get(f"{BASE}/facets", headers=KEY, params={"include_declined": "true"}).json()["total"] \
+        == len(names) + 1
+
+
+def test_only_admins_may_include_declined(db, with_declined):
+    general = _as(db, "general")
+    admin = _as(db, "admin")
+    assert client.get(f"{BASE}/", headers=general, params={"include_declined": "true"}).status_code == 403
+    assert client.get(f"{BASE}/facets", headers=general, params={"include_declined": "true"}).status_code == 403
+    assert "Dee Declined" not in _names(headers=general)
+    assert "Dee Declined" in _names({"include_declined": "true"}, headers=admin)
+    # The page itself is hidden from general accounts too, not just the list row.
+    assert client.get(f"{BASE}/{with_declined['dee']}", headers=general).status_code == 404
+    assert client.get(f"{BASE}/{with_declined['dee']}", headers=admin).status_code == 200
+
+
+def test_declined_signup_gets_no_library_link(db, with_declined):
+    keys = d.keys_by_handle(d.build_directory(db))
+    assert "dee.declined" not in keys
+    assert "kept.amb" in keys
+
+
+def test_export_leaves_declined_out_unless_asked(db, with_declined):
+    admin = _as(db, "admin")
+    assert "dee@example.com" not in client.get(f"{BASE}/export.csv", headers=admin).text
+    assert "dee@example.com" in client.get(f"{BASE}/export.csv", headers=admin,
+                                           params={"include_declined": "true"}).text
+
+
+def _ivy(headers):
+    r = client.get(f"{BASE}/", headers=headers, params={"q": "ivy"})
+    assert r.status_code == 200, r.text
+    [ivy] = r.json()["items"]
+    return ivy
+
+
+def test_nil_answers_are_admin_only(db, with_declined):
+    general = _as(db, "general")
+    admin = _as(db, "admin")
+    ivy = _ivy(general)
+    assert (ivy["nil_deals_done"], ivy["nil_deals_wanted"], ivy["content_type"]) == (None, None, None)
+    assert ivy["sport"] == "Golf" and ivy["followers"] == 1200 and ivy["status"] == "applicant"
+    r = client.get(f"{BASE}/", headers=general)
+    for secret in ("Synthetic deal history", "Synthetic deal wish", "Synthetic content description"):
+        assert secret not in r.text
+    detail = client.get(f"{BASE}/app-{_app_id(db, 'ivy@example.com')}", headers=general)
+    assert detail.status_code == 200 and "Synthetic deal" not in detail.text
+
+    ivy = _ivy(admin)
+    assert ivy["nil_deals_done"] == "Synthetic deal history"
+    assert ivy["nil_deals_wanted"] == "Synthetic deal wish"
+    assert ivy["content_type"] == "Synthetic content description"
+
+
+def _app_id(db, email):
+    return db.query(Application.id).filter(Application.email == email).scalar()

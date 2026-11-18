@@ -11,23 +11,27 @@ interface Props {
 // Admin + general (lib/access.ts ROSTER_PAGES); the backend refuses demo too.
 export default async function AthletesPage({ searchParams }: Props) {
   const raw = await searchParams;
-  const filters = filtersFromParams({
+  const session = await viewerSession();
+  const isAdmin = session?.role === "admin";
+  const parsed = filtersFromParams({
     get: (name) => {
       const v = raw[name];
       return Array.isArray(v) ? v[0] ?? null : v ?? null;
     },
   });
-  const [page, facets, session] = await Promise.all([
+  // Declined signups are admin-only; the flag is dropped for anyone else
+  // rather than turning the whole page into a 403.
+  const filters = { ...parsed, include_declined: isAdmin && parsed.include_declined };
+  const [page, facets] = await Promise.all([
     getAthleteDirectory(filtersToApiQuery(filters)).catch(() => null),
-    getAthleteDirectoryFacets().catch(() => null),
-    viewerSession(),
+    getAthleteDirectoryFacets(filters.include_declined).catch(() => null),
   ]);
   return (
     <AthleteDirectoryView
       initialFilters={filters}
       initialPage={page}
       facets={facets}
-      isAdmin={session?.role === "admin"}
+      isAdmin={isAdmin}
     />
   );
 }

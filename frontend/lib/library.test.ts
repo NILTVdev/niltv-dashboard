@@ -5,8 +5,12 @@ import {
   athleteHref,
   athleteLabel,
   effectiveSort,
+  filtersFromParams,
   fmtDuration,
+  libraryHrefForAthlete,
   libraryQuery,
+  pageQuery,
+  staffAdminUrl,
   needsTagging,
   qcLabel,
   relativeTime,
@@ -43,8 +47,9 @@ describe("libraryQuery", () => {
 
   it("sends search, facets and quick filters, trimmed", () => {
     const qs = libraryQuery(
-      { q: "  duke hoops ", facets: { sport: "Basketball", category: "", qc_state: "needs-review" },
-        needsTagging: true, hasVideo: true },
+      { q: "  duke hoops ", facets: { sport: "Basketball", category: "", qc_state: "needs-review",
+        athlete: "jsample_hoops" },
+        needsTagging: true, hasVideo: true, postedFrom: "2026-10-01", postedTo: "2026-10-31" },
       { sort: "views", limit: 48, offset: 96 },
     );
     const p = new URLSearchParams(qs);
@@ -54,6 +59,9 @@ describe("libraryQuery", () => {
     expect(p.get("qc_state")).toBe("needs-review");
     expect(p.get("needs_tagging")).toBe("true");
     expect(p.get("has_video")).toBe("true");
+    expect(p.get("athlete")).toBe("jsample_hoops");
+    expect(p.get("posted_from")).toBe("2026-10-01");
+    expect(p.get("posted_to")).toBe("2026-10-31");
     expect(p.get("sort")).toBe("views");
     expect(p.get("limit")).toBe("48");
     expect(p.get("offset")).toBe("96");
@@ -66,7 +74,55 @@ describe("libraryQuery", () => {
   });
 
   it("counts active filters, not the search", () => {
-    expect(activeFilterCount({ q: "x", facets: { sport: "Soccer", school: "" }, needsTagging: true, hasVideo: false })).toBe(2);
+    expect(activeFilterCount({ ...NO_FILTERS, q: "x", facets: { sport: "Soccer", school: "" }, needsTagging: true })).toBe(2);
+    expect(activeFilterCount({ ...NO_FILTERS, postedFrom: "2026-10-01", postedTo: "2026-10-31" })).toBe(2);
+  });
+});
+
+describe("page URL", () => {
+  const params = (q: string) => new URLSearchParams(q);
+
+  it("reads filters and sort from the URL", () => {
+    const { filters, sort } = filtersFromParams(params(
+      "athlete=jsample_hoops&q=camp&sport=Basketball&needs_tagging=true&has_video=true"
+      + "&posted_from=2026-10-01&posted_to=2026-10-31&sort=views"));
+    expect(filters).toEqual({
+      q: "camp", facets: { athlete: "jsample_hoops", sport: "Basketball" }, needsTagging: true, hasVideo: true,
+      postedFrom: "2026-10-01", postedTo: "2026-10-31",
+    });
+    expect(sort).toBe("views");
+  });
+
+  it("drops unknown sorts and malformed dates", () => {
+    const { filters, sort } = filtersFromParams(params("sort=random&posted_from=last-week&posted_to=2026-13-45&bogus=1"));
+    expect(filters).toEqual(NO_FILTERS);
+    expect(sort).toBe("relevance");
+  });
+
+  it("round-trips, and leaves the default sort out", () => {
+    const filters = { ...NO_FILTERS, q: "hoops", facets: { school: "Sample State" }, postedFrom: "2026-09-01" };
+    expect(pageQuery(NO_FILTERS, "relevance")).toBe("");
+    const qs = pageQuery(filters, "newest");
+    expect(params(qs).get("sort")).toBe("newest");
+    expect(filtersFromParams(params(qs))).toEqual({ filters, sort: "newest" });
+  });
+
+  it("links an athlete's clips by bare lowercase handle", () => {
+    expect(libraryHrefForAthlete("@JSample_Hoops")).toBe("/library?athlete=jsample_hoops");
+  });
+});
+
+describe("staffAdminUrl", () => {
+  it("is null when unset or not a web address", () => {
+    expect(staffAdminUrl(undefined)).toBeNull();
+    expect(staffAdminUrl("  ")).toBeNull();
+    expect(staffAdminUrl("javascript:alert(1)")).toBeNull();
+    expect(staffAdminUrl("not a url")).toBeNull();
+  });
+
+  it("keeps an http(s) address", () => {
+    expect(staffAdminUrl("https://admin.example.com")).toBe("https://admin.example.com/");
+    expect(staffAdminUrl(" http://localhost:5180 ")).toBe("http://localhost:5180/");
   });
 });
 

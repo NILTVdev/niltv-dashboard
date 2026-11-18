@@ -39,6 +39,16 @@ describe("filters <-> query strings", () => {
     expect(open.has("limit")).toBe(false);
   });
 
+  it("carries include_declined to the page URL and the API, and counts it", () => {
+    const f = { ...EMPTY_FILTERS, include_declined: true };
+    expect(filtersToPageQuery(f)).toBe("include_declined=true");
+    expect(params(filtersToApiQuery(f)).get("include_declined")).toBe("true");
+    expect(params(filtersToApiQuery(EMPTY_FILTERS)).has("include_declined")).toBe(false);
+    expect(filtersFromParams(params("include_declined=true")).include_declined).toBe(true);
+    expect(filtersFromParams(params("include_declined=yes")).include_declined).toBe(false);
+    expect(activeFilterCount(f)).toBe(1);
+  });
+
   it("counts active filters, not search or sort", () => {
     expect(activeFilterCount({ ...EMPTY_FILTERS, q: "x", sort: "name" })).toBe(0);
     expect(activeFilterCount({ ...EMPTY_FILTERS, sport: "Golf", partner_consent: "false" })).toBe(2);

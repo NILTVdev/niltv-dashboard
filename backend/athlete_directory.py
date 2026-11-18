@@ -31,6 +31,18 @@ Python, and the result is reused until one of the source tables changes
 Contact fields (email, college email, phone) and free-text application answers
 never leave this module in ``Person``; ``private_details`` returns them for
 admin callers only.
+
+Product defaults (the conservative choice in each case):
+
+  * A person whose only record is a declined signup is hidden. ``Query``
+    leaves them out unless ``include_declined`` is set, and the router lets
+    only admins set it. They also get no Athletes page link from the library
+    (``keys_by_handle``). Anyone with a roster or ambassador record stays
+    listed whatever an old application says.
+  * ``ADMIN_ONLY_FIELDS`` (NIL deals done and wanted, the free-text content
+    description) are part of the merged person but the router blanks them
+    for every non-admin caller. General accounts see sport, school, socials,
+    followers and status.
 """
 
 from __future__ import annotations
@@ -50,6 +62,11 @@ from backend.models import Ambassador, Application, Athlete, NiltvNetworkPost
 SOURCES = ("athlete", "ambassador", "application")
 STATUSES = ("ambassador_confirmed", "roster", "ambassador_candidate", "applicant")
 SORTS = ("followers", "collab_views", "name", "newest")
+
+# Free-text signup answers about NIL deals and content. Admins only: the router
+# blanks them for everyone else (see the module docstring).
+ADMIN_ONLY_FIELDS = ("nil_deals_done", "nil_deals_wanted", "content_type")
+DECLINED = "declined"
 
 # The athletes table is the Duke roster: its rows carry no school or campus.
 ROSTER_SCHOOL = "Duke"
@@ -529,11 +546,18 @@ def resolve_key(people: list[dict], key: str) -> Optional[dict]:
     return None
 
 
+def is_declined(p: dict) -> bool:
+    """Only a signup, and the newest one was declined. Hidden by default."""
+    return p["status"] == "applicant" and p.get("application_status") == DECLINED
+
+
 def keys_by_handle(people: list[dict]) -> dict[str, str]:
     """Normalized Instagram handle -> person key. A person's main handle wins
     over a handle someone else used before (a previous username or an old
-    signup), so a handle that changed owners points at its current owner."""
+    signup), so a handle that changed owners points at its current owner.
+    Declined signups get no key: their page is hidden by default."""
     out: dict[str, str] = {}
+    people = [p for p in people if not is_declined(p)]
     for p in people:
         if p["ig_handle"]:
             out.setdefault(p["ig_handle"], p["key"])
@@ -558,6 +582,7 @@ class Query:
     min_followers: Optional[int] = None
     max_followers: Optional[int] = None
     has_content: Optional[bool] = None
+    include_declined: bool = False   # admins only (the router enforces it)
     sort: str = "followers"
 
     def as_dict(self) -> dict:
@@ -569,6 +594,8 @@ def _fold(s: Optional[str]) -> str:
 
 
 def _matches(p: dict, f: Query) -> bool:
+    if not f.include_declined and is_declined(p):
+        return False
     if f.q:
         needle = _fold(f.q).lstrip("@")
         hay = " ".join(_fold(p.get(k)) for k in (

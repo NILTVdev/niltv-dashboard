@@ -892,6 +892,7 @@ export interface DirectoryPerson {
   youtube_subscribers: number | null;
   x_handle: string | null;
   profile_pic_url: string | null;
+  /** Admins only: null for every other role (backend ADMIN_ONLY_FIELDS). */
   nil_deals_done: string | null;
   nil_deals_wanted: string | null;
   content_type: string | null;
@@ -1001,6 +1002,8 @@ export interface LibraryAthlete {
 /** Instagram numbers joined by media id. null = not known, never 0. */
 export interface LibraryPerformance {
   matched: boolean;
+  /** The network pull, or the brand account pull when the network has no row. */
+  source?: "network" | "brand" | null;
   views: number | null;
   likes: number | null;
   comments: number | null;
@@ -1055,7 +1058,8 @@ export interface LibraryFacetValue {
   count: number;
 }
 
-export type LibraryFacetKey = "sport" | "school" | "channel" | "content_type" | "category" | "sponsor" | "qc_state";
+export type LibraryFacetKey =
+  "sport" | "school" | "channel" | "content_type" | "category" | "sponsor" | "qc_state" | "athlete";
 
 export type LibraryFacets = Record<LibraryFacetKey, LibraryFacetValue[]>;
 

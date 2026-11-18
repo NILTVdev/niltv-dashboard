@@ -5,17 +5,21 @@ import Link from "next/link";
 import { ExternalLink, Eye, Film, Search, Tag, X } from "lucide-react";
 import type { LibraryFacetKey, LibraryFacets, LibraryItem, LibraryPage, LibraryStatus } from "@/lib/types";
 import {
-  FACETS, NO_FILTERS, PAGE_SIZE, SORTS,
+  FACETS, LIBRARY_PATH, NO_FILTERS, PAGE_SIZE, SORTS,
   activeFilterCount, athleteHref, athleteLabel, effectiveSort, fmtDuration, libraryQuery,
-  needsTagging, qcLabel, syncStatusLine, tagChips,
+  needsTagging, pageQuery, qcLabel, staffAdminUrl, syncStatusLine, tagChips,
   type LibraryFilters, type LibrarySort,
 } from "@/lib/library";
 import { cn, fmt, fmtDate } from "@/lib/utils";
 
 const API = "/api/proxy/api/library";
 const SEARCH_DELAY_MS = 300;
+// Where clip labels are edited. null hides the links (NEXT_PUBLIC_STAFF_ADMIN_URL unset).
+const STAFF_ADMIN_URL = staffAdminUrl();
 
 interface Props {
+  initialFilters: LibraryFilters;
+  initialSort: LibrarySort;
   initialQuery: string;
   initialPage: LibraryPage | null;
   initialFacets: LibraryFacets | null;
@@ -35,13 +39,17 @@ async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export default function LibraryView({ initialQuery, initialPage, initialFacets, status }: Props) {
-  const [qInput, setQInput] = useState("");
-  const [q, setQ] = useState("");
-  const [facets, setFacets] = useState<LibraryFilters["facets"]>({});
-  const [needsTaggingOnly, setNeedsTaggingOnly] = useState(false);
-  const [hasVideo, setHasVideo] = useState(false);
-  const [sort, setSort] = useState<LibrarySort>("relevance");
+export default function LibraryView({
+  initialFilters, initialSort, initialQuery, initialPage, initialFacets, status,
+}: Props) {
+  const [qInput, setQInput] = useState(initialFilters.q);
+  const [q, setQ] = useState(initialFilters.q);
+  const [facets, setFacets] = useState<LibraryFilters["facets"]>(initialFilters.facets);
+  const [needsTaggingOnly, setNeedsTaggingOnly] = useState(initialFilters.needsTagging);
+  const [hasVideo, setHasVideo] = useState(initialFilters.hasVideo);
+  const [postedFrom, setPostedFrom] = useState(initialFilters.postedFrom);
+  const [postedTo, setPostedTo] = useState(initialFilters.postedTo);
+  const [sort, setSort] = useState<LibrarySort>(initialSort);
   const [loaded, setLoaded] = useState<Loaded>({
     qs: initialQuery, page: initialPage, facets: initialFacets, error: initialPage === null,
   });
@@ -55,13 +63,20 @@ export default function LibraryView({ initialQuery, initialPage, initialFacets, 
   }, [qInput]);
 
   const filters: LibraryFilters = useMemo(
-    () => ({ q, facets, needsTagging: needsTaggingOnly, hasVideo }),
-    [q, facets, needsTaggingOnly, hasVideo],
+    () => ({ q, facets, needsTagging: needsTaggingOnly, hasVideo, postedFrom, postedTo }),
+    [q, facets, needsTaggingOnly, hasVideo, postedFrom, postedTo],
   );
   const shownSort = effectiveSort(filters, sort);
   const qs = libraryQuery(filters, { sort, limit: PAGE_SIZE });
   const facetQs = libraryQuery(filters);
   const loading = loaded.qs !== qs;
+  const urlQuery = pageQuery(filters, sort);
+
+  // Keep the address bar in step with the filters, so a filtered view can be shared.
+  useEffect(() => {
+    const want = urlQuery ? `?${urlQuery}` : "";
+    if (window.location.search !== want) window.history.replaceState(null, "", `${LIBRARY_PATH}${want}`);
+  }, [urlQuery]);
 
   useEffect(() => {
     if (qs === loaded.qs) return;
@@ -104,6 +119,8 @@ export default function LibraryView({ initialQuery, initialPage, initialFacets, 
     setFacets(NO_FILTERS.facets);
     setNeedsTaggingOnly(false);
     setHasVideo(false);
+    setPostedFrom("");
+    setPostedTo("");
   }
 
   const syncLine = syncStatusLine(status);
@@ -155,7 +172,7 @@ export default function LibraryView({ initialQuery, initialPage, initialFacets, 
         <>
           {/* Filters */}
           <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm p-4 flex flex-col gap-3">
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
               {FACETS.map(({ key, label }) => {
                 const values = loaded.facets?.[key] ?? [];
                 const selected = facets[key] ?? "";
@@ -183,6 +200,8 @@ export default function LibraryView({ initialQuery, initialPage, initialFacets, 
                   </label>
                 );
               })}
+              <DateField label="Posted from" value={postedFrom} max={postedTo || undefined} onChange={setPostedFrom} />
+              <DateField label="Posted to" value={postedTo} min={postedFrom || undefined} onChange={setPostedTo} />
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Toggle on={needsTaggingOnly} onClick={() => setNeedsTaggingOnly((v) => !v)}>
@@ -211,7 +230,13 @@ export default function LibraryView({ initialQuery, initialPage, initialFacets, 
             </div>
             {needsTaggingOnly && (
               <p className="text-xs text-[#64748b] bg-[var(--brand-pale)] rounded-md px-3 py-2">
-                These clips are not marked ready. Labels are edited in the app&apos;s staff admin tool.
+                These clips are not marked ready. Labels are edited in the app&apos;s{" "}
+                {STAFF_ADMIN_URL ? (
+                  <a href={STAFF_ADMIN_URL} target="_blank" rel="noopener noreferrer"
+                     className="font-medium text-[#8a6d2f] underline underline-offset-2">
+                    staff admin tool
+                  </a>
+                ) : "staff admin tool"}.
                 Changes show here after the next sync.
               </p>
             )}
@@ -248,6 +273,27 @@ export default function LibraryView({ initialQuery, initialPage, initialFacets, 
 
       {open && <ClipDrawer item={open} onClose={() => setOpen(null)} />}
     </div>
+  );
+}
+
+function DateField({ label, value, min, max, onChange }: {
+  label: string; value: string; min?: string; max?: string; onChange: (v: string) => void;
+}) {
+  return (
+    <label className="flex flex-col gap-1 min-w-0">
+      <span className="text-[11px] font-medium text-[#64748b]">{label}</span>
+      <input
+        type="date"
+        value={value}
+        min={min}
+        max={max}
+        onChange={(e) => onChange(e.target.value)}
+        className={cn(
+          "w-full min-w-0 rounded-md border px-2 py-1.5 text-sm bg-white",
+          value ? "border-[var(--brand-light)] text-[#0f172a]" : "border-[#e2e8f0] text-[#64748b]",
+        )}
+      />
+    </label>
   );
 }
 
@@ -411,7 +457,9 @@ function ClipDrawer({ item, onClose }: { item: LibraryItem; onClose: () => void 
                 ? "Not from Instagram. No numbers to show."
                 : !p.matched
                   ? "The Instagram pull has not picked up this post yet."
-                  : "Instagram numbers from the latest pull. A dash means not reported."}
+                  : p.source === "brand"
+                    ? "Instagram numbers from the brand account pull. A dash means not reported."
+                    : "Instagram numbers from the latest pull. A dash means not reported."}
             </p>
             {p.permalink && (
               <a href={p.permalink} target="_blank" rel="noopener noreferrer"
@@ -422,7 +470,16 @@ function ClipDrawer({ item, onClose }: { item: LibraryItem; onClose: () => void 
           </section>
 
           <section className="flex flex-col gap-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-[#64748b]">Labels</h3>
+            <div className="flex items-baseline justify-between gap-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-[#64748b]">Labels</h3>
+              {STAFF_ADMIN_URL && (
+                <a href={STAFF_ADMIN_URL} target="_blank" rel="noopener noreferrer"
+                   title="Opens the staff admin tool. Find this clip on its Content tab."
+                   className="inline-flex items-center gap-1 text-xs font-medium text-[#8a6d2f] hover:underline">
+                  Edit in staff admin <ExternalLink size={12} />
+                </a>
+              )}
+            </div>
             <TagRow label="Sport" values={item.sport ? [item.sport] : []} />
             <TagRow label="School" values={item.school ? [item.school] : []} />
             <TagRow label="Content type" values={types} />

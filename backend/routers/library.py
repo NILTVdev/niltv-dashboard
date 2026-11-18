@@ -5,8 +5,10 @@ The NIL TV app's hourly ingest labels every clip (sport, school, content
 types, categories, sponsor, athletes, keywords, summary, QC state) and POSTs a
 full snapshot here (/sync). Staff search and filter it on the Library page; each
 clip that came from Instagram is joined to niltv_network_posts on its media id
-for views, likes, comments, shares and saves. A number the dashboard has not
-pulled stays null, never 0.
+for views, likes, comments, shares and saves. When the network pull has no row
+for it, brand_posts (the owned brand accounts' own pull) is used instead; a
+network row always wins. A number the dashboard has not pulled stays null,
+never 0.
 
 Access: general may GET (backend/accounts.py); demo may not (per-clip data);
 POST /sync is admin or service caller only (the app's ingest Lambda sends the
@@ -195,6 +197,9 @@ async def sync_library(request: Request, db: Session = Depends(get_db)):
 
 class Performance(BaseModel):
     matched: bool                   # an Instagram post row was found for ig_post_id
+    # Which pull the numbers came from: 'network' (niltv_network_posts) or
+    # 'brand' (brand_posts, used only when the network pull has no row).
+    source: Optional[Literal["network", "brand"]] = None
     views: Optional[int] = None
     likes: Optional[int] = None
     comments: Optional[int] = None
@@ -259,15 +264,31 @@ _ITEM_COLUMNS = ", ".join(f"li.{c}" for c in (
     "video_url", "duration_sec", "posted_at", "updated_at", "removed", "first_seen_at",
     "last_synced_at"))
 
-# Null when the post row is missing or carries no interaction counts at all.
-_INTERACTIONS = """CASE WHEN p.likes IS NULL AND p.comments IS NULL AND p.shares IS NULL AND p.saves IS NULL
-    THEN NULL ELSE COALESCE(p.likes, 0) + COALESCE(p.comments, 0) + COALESCE(p.shares, 0) + COALESCE(p.saves, 0) END"""
+# Numbers come from the network pull when it has the post, else from the brand
+# account pull. The brand join only runs when no network row matched, so a
+# network row always wins (even where its own value is null) and COALESCE
+# never mixes the two sources.
+_METRICS = {
+    "views": "COALESCE(p.views, b.views)",
+    "likes": "COALESCE(p.likes, b.like_count)",
+    "comments": "COALESCE(p.comments, b.comment_count)",
+    "shares": "COALESCE(p.shares, b.shares)",
+    "saves": "COALESCE(p.saves, b.saves)",
+    "reach": "COALESCE(p.reach, b.reach)",
+    "permalink": "COALESCE(p.permalink, b.permalink)",
+}
+_COUNTED = [_METRICS[k] for k in ("likes", "comments", "shares", "saves")]
+# Null when no post row matched or it carries no interaction counts at all.
+_INTERACTIONS = (f"CASE WHEN {' AND '.join(f'{c} IS NULL' for c in _COUNTED)} THEN NULL "
+                 f"ELSE {' + '.join(f'COALESCE({c}, 0)' for c in _COUNTED)} END")
 
-_FIELDS = f"""{_ITEM_COLUMNS}, (p.id IS NOT NULL) AS perf_matched,
-    p.views AS perf_views, p.likes AS perf_likes, p.comments AS perf_comments,
-    p.shares AS perf_shares, p.saves AS perf_saves, p.reach AS perf_reach,
-    {_INTERACTIONS} AS perf_interactions, p.permalink AS perf_permalink"""
-_FROM = "FROM library_items li LEFT JOIN niltv_network_posts p ON p.post_id = li.ig_post_id"
+_FIELDS = (f"{_ITEM_COLUMNS}, (p.id IS NOT NULL OR b.id IS NOT NULL) AS perf_matched, "
+           "CASE WHEN p.id IS NOT NULL THEN 'network' WHEN b.id IS NOT NULL THEN 'brand' END AS perf_source, "
+           + ", ".join(f"{expr} AS perf_{name}" for name, expr in _METRICS.items())
+           + f", {_INTERACTIONS} AS perf_interactions")
+_FROM = """FROM library_items li
+    LEFT JOIN niltv_network_posts p ON p.post_id = li.ig_post_id
+    LEFT JOIN brand_posts b ON p.id IS NULL AND b.ig_post_id = li.ig_post_id"""
 
 
 def _item(row) -> LibraryItemOut:
@@ -396,9 +417,14 @@ def _where(f: Filters, skip: Optional[str] = None) -> tuple[str, dict]:
     if f.category is not None and skip != "category":
         clauses.append("li.categories @> ARRAY[:category]::text[]")
         params["category"] = f.category
-    if f.athlete:
-        clauses.append("""EXISTS (SELECT 1 FROM jsonb_array_elements(li.athletes) a
-                           WHERE lower(a->>'handle') = :athlete_handle OR a->>'id' = :athlete)""")
+    if f.athlete and skip != "athlete":
+        # The same rule as the athlete page's clip list (_FEATURES_HANDLES): a
+        # tagged athlete, or a handle the app could not match, is theirs.
+        clauses.append("""(EXISTS (SELECT 1 FROM jsonb_array_elements(li.athletes) a
+                                   WHERE lower(ltrim(a->>'handle', '@')) = :athlete_handle
+                                      OR a->>'id' = :athlete)
+                           OR EXISTS (SELECT 1 FROM unnest(li.unresolved_handles) u
+                                      WHERE lower(ltrim(u, '@')) = :athlete_handle))""")
         params["athlete"] = f.athlete.strip()
         params["athlete_handle"] = f.athlete.strip().lstrip("@").lower()
     if f.needs_tagging and skip != "qc_state":
@@ -464,6 +490,7 @@ class Facets(BaseModel):
     category: list[FacetValue]
     sponsor: list[FacetValue]
     qc_state: list[FacetValue]
+    athlete: list[FacetValue] = []   # value = lowercase handle, label = name when the app sent one
 
 
 # facet -> (value expression, label expression, FROM addition)
@@ -477,6 +504,9 @@ _FACETS = {
     "category": ("cat.v", "cat.v", "CROSS JOIN LATERAL unnest(li.categories) AS cat(v)"),
     "sponsor": ("li.sponsor", "li.sponsor", ""),
     "qc_state": ("li.qc_state", "li.qc_state", ""),
+    "athlete": ("lower(ltrim(ath.v->>'handle', '@'))",
+                "MAX(COALESCE(NULLIF(ath.v->>'name', ''), '@' || ltrim(ath.v->>'handle', '@')))",
+                "CROSS JOIN LATERAL jsonb_array_elements(li.athletes) AS ath(v)"),
 }
 
 

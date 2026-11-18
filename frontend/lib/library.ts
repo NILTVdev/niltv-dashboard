@@ -1,7 +1,8 @@
 /**
  * Pure helpers for the Library page (components/LibraryView.tsx): query
- * strings for /api/library, labels and the sync status line. No fetches here,
- * so lib/library.test.ts can cover them.
+ * strings for /api/library, the page URL (filtered views are linkable),
+ * labels and the sync status line. No fetches here, so lib/library.test.ts
+ * can cover them.
  */
 
 import type { LibraryAthlete, LibraryFacetKey, LibraryItem, LibraryStatus } from "./types";
@@ -16,6 +17,7 @@ export const SORTS: { key: LibrarySort; label: string }[] = [
 ];
 
 export const FACETS: { key: LibraryFacetKey; label: string }[] = [
+  { key: "athlete", label: "Athlete" },
   { key: "sport", label: "Sport" },
   { key: "school", label: "School" },
   { key: "channel", label: "Channel" },
@@ -27,15 +29,85 @@ export const FACETS: { key: LibraryFacetKey; label: string }[] = [
 
 export const PAGE_SIZE = 48;
 export const READY = "ready";
+export const LIBRARY_PATH = "/library";
+export const DEFAULT_SORT: LibrarySort = "relevance";
 
 export interface LibraryFilters {
   q: string;
   facets: Partial<Record<LibraryFacetKey, string>>;
   needsTagging: boolean;
   hasVideo: boolean;
+  /** Posted on or after this day (YYYY-MM-DD), "" for no bound. */
+  postedFrom: string;
+  /** Posted on or before this day (YYYY-MM-DD), "" for no bound. */
+  postedTo: string;
 }
 
-export const NO_FILTERS: LibraryFilters = { q: "", facets: {}, needsTagging: false, hasVideo: false };
+export const NO_FILTERS: LibraryFilters = {
+  q: "", facets: {}, needsTagging: false, hasVideo: false, postedFrom: "", postedTo: "",
+};
+
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const isDay = (v: string) => DAY.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`));
+const SORT_KEYS = SORTS.map((s) => s.key);
+
+type ParamSource = { get(name: string): string | null };
+
+/** Filters and sort from the page URL (/library?athlete=...&sport=...).
+ * Unknown sorts and malformed dates fall back to the defaults. */
+export function filtersFromParams(params: ParamSource): { filters: LibraryFilters; sort: LibrarySort } {
+  const pick = (name: string) => (params.get(name) ?? "").trim();
+  const facets: LibraryFilters["facets"] = {};
+  for (const { key } of FACETS) {
+    const v = pick(key);
+    if (v) facets[key] = v;
+  }
+  const from = pick("posted_from");
+  const to = pick("posted_to");
+  const sort = pick("sort") as LibrarySort;
+  return {
+    filters: {
+      q: pick("q"),
+      facets,
+      needsTagging: pick("needs_tagging") === "true",
+      hasVideo: pick("has_video") === "true",
+      postedFrom: isDay(from) ? from : "",
+      postedTo: isDay(to) ? to : "",
+    },
+    sort: SORT_KEYS.includes(sort) ? sort : DEFAULT_SORT,
+  };
+}
+
+/** The page URL's query string: the filters, plus the sort when it is not
+ * the default. Same names as the API, so a link and a fetch read alike. */
+export function pageQuery(filters: LibraryFilters, sort: LibrarySort): string {
+  const p = new URLSearchParams(libraryQuery(filters));
+  if (sort !== DEFAULT_SORT) p.set("sort", sort);
+  return p.toString();
+}
+
+/** The Library filtered to one athlete's Instagram handle. */
+export function libraryHrefForAthlete(handle: string): string {
+  return `${LIBRARY_PATH}?${new URLSearchParams({ athlete: handle.trim().replace(/^@/, "").toLowerCase() })}`;
+}
+
+/**
+ * The staff admin tool (in the app repo) is where clip labels are edited. Its
+ * address comes from NEXT_PUBLIC_STAFF_ADMIN_URL. The tool has no per-clip
+ * URL (its tabs are in-page state), so every link goes to the tool itself,
+ * which opens on its Content tab. null when unset or not an http(s) URL: the
+ * page then shows no link.
+ */
+export function staffAdminUrl(raw: string | undefined = process.env.NEXT_PUBLIC_STAFF_ADMIN_URL): string | null {
+  const v = (raw ?? "").trim();
+  if (!v) return null;
+  try {
+    const u = new URL(v);
+    return u.protocol === "https:" || u.protocol === "http:" ? u.toString() : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Best match only means something with a search; otherwise newest. */
 export function effectiveSort(filters: LibraryFilters, sort: LibrarySort): LibrarySort {
@@ -56,6 +128,8 @@ export function libraryQuery(
   }
   if (filters.needsTagging) p.set("needs_tagging", "true");
   if (filters.hasVideo) p.set("has_video", "true");
+  if (filters.postedFrom) p.set("posted_from", filters.postedFrom);
+  if (filters.postedTo) p.set("posted_to", filters.postedTo);
   if (opts.sort) p.set("sort", effectiveSort(filters, opts.sort));
   if (opts.limit != null) p.set("limit", String(opts.limit));
   if (opts.offset) p.set("offset", String(opts.offset));
@@ -64,7 +138,8 @@ export function libraryQuery(
 
 export function activeFilterCount(filters: LibraryFilters): number {
   return Object.values(filters.facets).filter(Boolean).length
-    + (filters.needsTagging ? 1 : 0) + (filters.hasVideo ? 1 : 0);
+    + (filters.needsTagging ? 1 : 0) + (filters.hasVideo ? 1 : 0)
+    + (filters.postedFrom ? 1 : 0) + (filters.postedTo ? 1 : 0);
 }
 
 /** "needs-review" -> "Needs review"; null -> "Not checked". */
