@@ -7,7 +7,7 @@ from backend.auth import require_api_key
 from backend.config import get_settings
 from backend.onboarding import vote_outbox
 
-from backend.routers import athletes, snapshots, posts, zoomph, web_analytics, trueblue, reports, brand, ambassadors, network_screen, campus_channels, applications, community_star, community_star_voting, users
+from backend.routers import athletes, snapshots, posts, zoomph, web_analytics, trueblue, reports, brand, ambassadors, network_screen, campus_channels, applications, community_star, community_star_voting, users, athlete_directory
 
 # The interactive docs and OpenAPI schema expose the full route map and auth
 # model, so they are served outside production only.
@@ -61,6 +61,7 @@ app.include_router(trueblue.router, prefix="/api/trueblue", tags=["trueblue"])
 app.include_router(reports.router, prefix="/api/reports", tags=["reports"])
 app.include_router(brand.router, prefix="/api/brand", tags=["brand"])
 app.include_router(ambassadors.router, prefix="/api/ambassadors", tags=["ambassadors"])
+app.include_router(athlete_directory.router, prefix="/api/athlete-directory", tags=["athlete-directory"])
 app.include_router(network_screen.router, prefix="/api/network-screen", tags=["network-screen"])
 app.include_router(campus_channels.router, prefix="/api/campus-channels", tags=["campus-channels"])
 # Public first: /webhooks/... must win over the admin /{application_id} routes.

@@ -36,13 +36,14 @@ _AGGREGATE = (
     "/api/campus-channels",
     "/api/web-analytics",
 )
-_ROSTER = ("/api/athletes", "/api/snapshots", "/api/posts")
+_ROSTER = ("/api/athletes", "/api/snapshots", "/api/posts", "/api/athlete-directory")
 READ_PREFIXES = {
     "general": _AGGREGATE + _ROSTER,
     "demo": _AGGREGATE,
 }
-# Inside an allowed prefix but still admin-only (account registry, tokens).
-ADMIN_ONLY_PREFIXES = ("/api/brand/accounts",)
+# Inside an allowed prefix but still admin-only (account registry, tokens,
+# the athlete export with contact fields).
+ADMIN_ONLY_PREFIXES = ("/api/brand/accounts", "/api/athlete-directory/export.csv")
 # Every signed-in account may read itself and change its own password.
 SELF_SERVICE = {("GET", "/api/auth/me"), ("POST", "/api/auth/password")}
 
