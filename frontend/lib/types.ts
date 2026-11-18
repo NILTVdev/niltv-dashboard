@@ -862,3 +862,125 @@ export interface CommunityStarVoteSummary {
   mail: { queued: number; sent: number; failed: number };
   flags: CommunityStarVoteFlag[];
 }
+
+// ── Athlete directory (/api/athlete-directory) ────────────────────────────────
+
+export type DirectoryStatus = "ambassador_confirmed" | "roster" | "ambassador_candidate" | "applicant";
+export type DirectorySource = "athlete" | "ambassador" | "application";
+export type DirectorySort = "followers" | "collab_views" | "name" | "newest";
+
+export interface DirectoryPerson {
+  key: string;
+  member_keys: string[];
+  sources: DirectorySource[];
+  display_name: string;
+  sport: string | null;
+  school: string | null;
+  year: string | null;
+  campus: string | null;
+  gender: string | null;
+  status: DirectoryStatus;
+  application_status: string | null;
+  ig_handle: string | null;
+  followers: number | null;
+  followers_source: "ambassador" | "roster" | "application" | null;
+  followers_as_of: string | null;
+  followers_self_reported: boolean;
+  tiktok_handle: string | null;
+  tiktok_followers: number | null;
+  youtube_handle: string | null;
+  youtube_subscribers: number | null;
+  x_handle: string | null;
+  profile_pic_url: string | null;
+  nil_deals_done: string | null;
+  nil_deals_wanted: string | null;
+  content_type: string | null;
+  partner_consent: boolean | null;
+  applied_at: string | null;
+  first_seen: string | null;
+  collab_posts: number | null;
+  collab_views: number | null;
+  collab_engagement: number | null;
+  last_pulled: string | null;
+}
+
+export interface DirectoryPage {
+  total: number;
+  limit: number;
+  offset: number;
+  items: DirectoryPerson[];
+}
+
+export interface DirectoryFacetValue {
+  value: string;
+  count: number;
+}
+
+export interface DirectoryFacets {
+  total: number;
+  sport: DirectoryFacetValue[];
+  school: DirectoryFacetValue[];
+  campus: DirectoryFacetValue[];
+  status: DirectoryFacetValue[];
+}
+
+export interface DirectoryHistoryPoint {
+  pulled_at: string | null;
+  ig_followers: number | null;
+  tiktok_followers: number | null;
+  youtube_subscribers: number | null;
+  source: "roster" | "ambassador" | "reported";
+}
+
+export interface DirectoryPost {
+  post_id: string;
+  account_username: string | null;
+  description: string | null;
+  publish_time: string | null;
+  permalink: string | null;
+  post_type: string | null;
+  media_url: string | null;
+  thumbnail_url: string | null;
+  views: number | null;
+  likes: number | null;
+  comments: number | null;
+  shares: number | null;
+  saves: number | null;
+}
+
+/** Admin-only: the backend leaves `applications` null for every other role. */
+export interface DirectoryApplication {
+  application_id: number;
+  email: string;
+  college_email: string | null;
+  phone: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  status: string;
+  submitted_at: string | null;
+  updated_at: string | null;
+  roster_link: string | null;
+  international: boolean | null;
+  instagram: string | null;
+  instagram_followers: string | null;
+  tiktok: string | null;
+  tiktok_followers: string | null;
+  youtube: string | null;
+  youtube_subscribers: string | null;
+  other_followers: string | null;
+  purpose: string | null;
+  description: string | null;
+  answers: unknown;
+  consent_program_email: boolean;
+  consent_sms: boolean;
+  consent_marketing: boolean;
+  consent_partners: boolean;
+  consent_at: string | null;
+}
+
+export interface DirectoryDetail {
+  person: DirectoryPerson;
+  history: DirectoryHistoryPoint[];
+  posts: DirectoryPost[];
+  applications: DirectoryApplication[] | null;
+}

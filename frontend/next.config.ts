@@ -32,7 +32,9 @@ const nextConfig: NextConfig = {
       { source: "/zoomph", destination: `${TRUEBLUETV}/duke-owned`, permanent: false },
       { source: "/trueblue", destination: `${TRUEBLUETV}/trueblue-tv`, permanent: false },
       { source: "/web-analytics", destination: `${TRUEBLUETV}/web-analytics`, permanent: false },
-      { source: "/athletes/:id", destination: `${TRUEBLUETV}/athletes/:id`, permanent: false },
+      // Old roster links were numeric (/athletes/7). The athlete directory
+      // lives at /athletes now and its keys are prefixed (amb-12, ath-5).
+      { source: "/athletes/:id(\\d+)", destination: `${TRUEBLUETV}/athletes/:id`, permanent: false },
     ];
   },
 };
