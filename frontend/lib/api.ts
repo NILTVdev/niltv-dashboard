@@ -138,3 +138,22 @@ export const getCommunityStarProgram = () =>
   apiFetchFresh<CommunityStarProgram>("/api/community-star/program");
 export const getCommunityStarVoteSummary = () =>
   apiFetchFresh<CommunityStarVoteSummary>("/api/community-star/votes/summary");
+
+// ── Athlete directory ─────────────────────────────────────────────────────────
+// Roster-level: admin + general. The backend adds contact fields for admins only.
+
+import type { DirectoryDetail, DirectoryFacets, DirectoryPage } from "./types";
+
+export const getAthleteDirectory = (query: string) =>
+  apiFetch<DirectoryPage>(`/api/athlete-directory/${query ? `?${query}` : ""}`);
+export const getAthleteDirectoryFacets = () =>
+  apiFetch<DirectoryFacets>("/api/athlete-directory/facets");
+
+/** One person, or null when no record has that key. */
+export async function getAthleteDirectoryPerson(key: string): Promise<DirectoryDetail | null> {
+  const path = `/api/athlete-directory/${encodeURIComponent(key)}`;
+  const res = await fetch(`${BASE}${path}`, { headers: await viewerHeaders(), cache: "no-store" });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`API ${path} → ${res.status}`);
+  return res.json() as Promise<DirectoryDetail>;
+}

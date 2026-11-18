@@ -29,9 +29,12 @@ const AGGREGATE_PAGES = [
   CAMPUS_CHANNELS,
   "/niltv-web-analytics",
 ];
-// Athlete-level pages. They sit inside Campus Channels, so canSeePage checks
-// them before the section-wide grant above.
-const ROSTER_PAGES = [`${TRUEBLUETV}/roster`, `${TRUEBLUETV}/player-details`, `${TRUEBLUETV}/athletes`];
+// Athlete-level pages: general yes, demo no. Some sit inside Campus Channels,
+// so canSeePage checks them before the section-wide grant above.
+const ROSTER_PAGES = [
+  `${TRUEBLUETV}/roster`, `${TRUEBLUETV}/player-details`, `${TRUEBLUETV}/athletes`,
+  "/athletes",
+];
 // Every signed-in account can manage its own password.
 const SELF_PAGES = ["/account"];
 

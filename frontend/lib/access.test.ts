@@ -23,6 +23,15 @@ describe("canSeePage", () => {
     }
   });
 
+  it("opens the athlete directory to admin and general, not demo", () => {
+    for (const path of ["/athletes", "/athletes/amb-12", "/athletes/app-40"]) {
+      expect(canSeePage("admin", path)).toBe(true);
+      expect(canSeePage("general", path)).toBe(true);
+      expect(canSeePage("demo", path)).toBe(false);
+    }
+    expect(canSeePage("general", "/athletes-old")).toBe(false);
+  });
+
   it("keeps admin pages to admins", () => {
     for (const path of ["/niltv-onboarding", "/users", "/adminpage"]) {
       expect(canSeePage("general", path)).toBe(false);
