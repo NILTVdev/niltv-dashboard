@@ -15,7 +15,7 @@ import {
   qcLabel,
   relativeTime,
   syncStatusLine,
-  tagChips,
+  seriesLabel, tagChips,
 } from "./library";
 import type { LibraryItem, LibraryStatus, LibrarySyncRun } from "./types";
 
@@ -25,7 +25,8 @@ function item(over: Partial<LibraryItem> = {}): LibraryItem {
   return {
     content_id: "ig-1", stage: "dev", ig_post_id: "1", channel_id: "ch-niltv", channel_name: "NIL TV",
     title: "Sample clip", caption: null, summary: null, keywords: [], sport: null, school: null,
-    content_type: null, content_types: [], categories: [], sponsor: null, athletes: [],
+    content_type: null, content_types: [], categories: [], sponsor: null, tags: [], asset_type: null,
+    series_id: null, series_name: null, season: null, episode: null, athletes: [],
     unresolved_handles: [], status: "published", qc_state: "ready", poster_url: null, video_url: null,
     duration_sec: null, posted_at: null, updated_at: null, removed: false,
     first_seen_at: "2026-11-01T00:00:00Z", last_synced_at: "2026-11-18T14:00:00Z",
@@ -201,5 +202,19 @@ describe("athleteHref", () => {
   it("gives no link when the directory has no match", () => {
     expect(athleteHref({ id: "a1", name: "Sample", handle: "sample", directory_key: null })).toBeNull();
     expect(athleteHref({ id: "a1", name: "Sample", handle: "sample" })).toBeNull();
+  });
+});
+
+describe("series and staff tags", () => {
+  it("labels the series with season and episode when known", () => {
+    expect(seriesLabel(item())).toBeNull();
+    expect(seriesLabel(item({ series_id: "se-1" }))).toBe("se-1");
+    expect(seriesLabel(item({ series_id: "se-1", series_name: "Sample Show", season: 1, episode: 4 })))
+      .toBe("Sample Show · S1 E4");
+    expect(seriesLabel(item({ series_id: "se-1", series_name: "Sample Show", episode: 2 }))).toBe("Sample Show · E2");
+  });
+
+  it("adds staff tags to the card chips without repeats", () => {
+    expect(tagChips(item({ sport: "Basketball", tags: ["basketball", "Hype"] }))).toEqual(["Basketball", "Hype"]);
   });
 });

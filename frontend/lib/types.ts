@@ -1030,6 +1030,14 @@ export interface LibraryItem {
   content_types: string[];
   categories: string[];
   sponsor: string | null;
+  /** Staff tags from the admin tool (the content API's partner tags). */
+  tags: string[];
+  /** "episode" | "clip" | "short"; null from older syncs (reads as clip). */
+  asset_type: string | null;
+  series_id: string | null;
+  series_name: string | null;
+  season: number | null;
+  episode: number | null;
   athletes: LibraryAthlete[];
   unresolved_handles: string[];
   status: string;
@@ -1059,7 +1067,8 @@ export interface LibraryFacetValue {
 }
 
 export type LibraryFacetKey =
-  "sport" | "school" | "channel" | "content_type" | "category" | "sponsor" | "qc_state" | "athlete";
+  | "sport" | "school" | "channel" | "content_type" | "category" | "sponsor" | "tag" | "series" | "asset_type"
+  | "qc_state" | "athlete";
 
 export type LibraryFacets = Record<LibraryFacetKey, LibraryFacetValue[]>;
 

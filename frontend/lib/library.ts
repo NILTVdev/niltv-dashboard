@@ -24,6 +24,9 @@ export const FACETS: { key: LibraryFacetKey; label: string }[] = [
   { key: "category", label: "Category" },
   { key: "content_type", label: "Content type" },
   { key: "sponsor", label: "Sponsor" },
+  { key: "tag", label: "Tag" },
+  { key: "series", label: "Series" },
+  { key: "asset_type", label: "Type" },
   { key: "qc_state", label: "QC" },
 ];
 
@@ -158,7 +161,7 @@ export function tagChips(item: LibraryItem): string[] {
   const types = item.content_types.length ? item.content_types : item.content_type ? [item.content_type] : [];
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const t of [item.sport, item.school, ...types, ...item.categories, item.sponsor]) {
+  for (const t of [item.sport, item.school, ...types, ...item.categories, item.sponsor, ...(item.tags ?? [])]) {
     const v = (t ?? "").trim();
     if (!v || seen.has(v.toLowerCase())) continue;
     seen.add(v.toLowerCase());
@@ -166,6 +169,17 @@ export function tagChips(item: LibraryItem): string[] {
   }
   return out;
 }
+
+/** "Sample Show · S1 E4", or null when the clip is in no series. */
+export function seriesLabel(item: Pick<LibraryItem, "series_id" | "series_name" | "season" | "episode">): string | null {
+  const name = item.series_name ?? item.series_id;
+  if (!name) return null;
+  const numbers = [item.season ? `S${item.season}` : null, item.episode ? `E${item.episode}` : null]
+    .filter(Boolean).join(" ");
+  return numbers ? `${name} · ${numbers}` : name;
+}
+
+export const ASSET_TYPE_LABEL: Record<string, string> = { episode: "Episode", clip: "Clip", short: "Short" };
 
 /** The athlete's directory page, when the directory knows their handle. */
 export function athleteHref(a: LibraryAthlete): string | null {

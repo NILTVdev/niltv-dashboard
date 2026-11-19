@@ -60,7 +60,7 @@ class SyncAthlete(BaseModel):
     handle: Optional[str] = None
 
 
-_LIST_FIELDS = ("keywords", "content_types", "categories", "athletes", "unresolved_handles")
+_LIST_FIELDS = ("keywords", "content_types", "categories", "tags", "athletes", "unresolved_handles")
 
 
 class SyncItem(BaseModel):
@@ -79,6 +79,14 @@ class SyncItem(BaseModel):
     content_types: list[str] = Field(default_factory=list)
     categories: list[str] = Field(default_factory=list)
     sponsor: Optional[str] = None
+    # Content API tagging (migration 037). Optional, so an older app build
+    # that does not send them still syncs.
+    tags: list[str] = Field(default_factory=list)
+    asset_type: Optional[str] = None
+    series_id: Optional[str] = None
+    series_name: Optional[str] = None
+    season: Optional[int] = None
+    episode: Optional[int] = None
     athletes: list[SyncAthlete] = Field(default_factory=list)
     unresolved_handles: list[str] = Field(default_factory=list)
     status: str
@@ -235,6 +243,12 @@ class LibraryItemOut(BaseModel):
     content_types: list[str]
     categories: list[str]
     sponsor: Optional[str]
+    tags: list[str] = []
+    asset_type: Optional[str] = None
+    series_id: Optional[str] = None
+    series_name: Optional[str] = None
+    season: Optional[int] = None
+    episode: Optional[int] = None
     athletes: list[Athlete]
     unresolved_handles: list[str]
     status: str
@@ -260,7 +274,8 @@ class LibraryPage(BaseModel):
 _ITEM_COLUMNS = ", ".join(f"li.{c}" for c in (
     "content_id", "stage", "ig_post_id", "channel_id", "channel_name", "title", "caption",
     "summary", "keywords", "sport", "school", "content_type", "content_types", "categories",
-    "sponsor", "athletes", "unresolved_handles", "status", "qc_state", "poster_url",
+    "sponsor", "tags", "asset_type", "series_id", "series_name", "season", "episode",
+    "athletes", "unresolved_handles", "status", "qc_state", "poster_url",
     "video_url", "duration_sec", "posted_at", "updated_at", "removed", "first_seen_at",
     "last_synced_at"))
 
@@ -359,6 +374,9 @@ class Filters(BaseModel):
     content_type: Optional[str] = None
     category: Optional[str] = None
     sponsor: Optional[str] = None
+    tag: Optional[str] = None
+    series: Optional[str] = None
+    asset_type: Optional[str] = None
     athlete: Optional[str] = None
     qc_state: Optional[str] = None
     needs_tagging: bool = False
@@ -376,6 +394,9 @@ def _filters_dep(
     content_type: Optional[str] = None,
     category: Optional[str] = None,
     sponsor: Optional[str] = None,
+    tag: Optional[str] = Query(None, description="staff tag"),
+    series: Optional[str] = Query(None, description="series id"),
+    asset_type: Optional[str] = Query(None, description="episode | clip | short"),
     athlete: Optional[str] = Query(None, description="athlete handle (with or without @) or athlete id"),
     qc_state: Optional[str] = None,
     needs_tagging: bool = Query(False, description="only clips whose QC state is not ready"),
@@ -386,7 +407,7 @@ def _filters_dep(
 ) -> Filters:
     return Filters(q=(q or "").strip() or None, sport=sport, school=school, channel=channel,
                    content_type=content_type, category=category, sponsor=sponsor,
-                   athlete=athlete, qc_state=qc_state, needs_tagging=needs_tagging,
+                   tag=tag, series=series, asset_type=asset_type, athlete=athlete, qc_state=qc_state, needs_tagging=needs_tagging,
                    posted_from=posted_from, posted_to=posted_to, has_video=has_video,
                    include_removed=include_removed)
 
@@ -406,7 +427,8 @@ def _where(f: Filters, skip: Optional[str] = None) -> tuple[str, dict]:
             match = f"({match} OR li.search @@ to_tsquery('simple', :pq))"
         clauses.append(match)
     for name, col in (("sport", "li.sport"), ("school", "li.school"), ("channel", "li.channel_id"),
-                      ("sponsor", "li.sponsor"), ("qc_state", "li.qc_state")):
+                      ("sponsor", "li.sponsor"), ("qc_state", "li.qc_state"),
+                      ("series", "li.series_id"), ("asset_type", "COALESCE(li.asset_type, 'clip')")):
         val = getattr(f, name)
         if val is not None and name != skip:
             clauses.append(f"{col} = :{name}")
@@ -417,6 +439,9 @@ def _where(f: Filters, skip: Optional[str] = None) -> tuple[str, dict]:
     if f.category is not None and skip != "category":
         clauses.append("li.categories @> ARRAY[:category]::text[]")
         params["category"] = f.category
+    if f.tag is not None and skip != "tag":
+        clauses.append("li.tags @> ARRAY[:tag]::text[]")
+        params["tag"] = f.tag
     if f.athlete and skip != "athlete":
         # The same rule as the athlete page's clip list (_FEATURES_HANDLES): a
         # tagged athlete, or a handle the app could not match, is theirs.
@@ -489,6 +514,9 @@ class Facets(BaseModel):
     content_type: list[FacetValue]
     category: list[FacetValue]
     sponsor: list[FacetValue]
+    tag: list[FacetValue] = []
+    series: list[FacetValue] = []        # value = series id, label = series name
+    asset_type: list[FacetValue] = []
     qc_state: list[FacetValue]
     athlete: list[FacetValue] = []   # value = lowercase handle, label = name when the app sent one
 
@@ -503,6 +531,9 @@ _FACETS = {
                             THEN li.content_types ELSE ARRAY[li.content_type] END) AS ct(v)"""),
     "category": ("cat.v", "cat.v", "CROSS JOIN LATERAL unnest(li.categories) AS cat(v)"),
     "sponsor": ("li.sponsor", "li.sponsor", ""),
+    "tag": ("tg.v", "tg.v", "CROSS JOIN LATERAL unnest(li.tags) AS tg(v)"),
+    "series": ("li.series_id", "MAX(COALESCE(li.series_name, li.series_id))", ""),
+    "asset_type": ("COALESCE(li.asset_type, 'clip')", "COALESCE(li.asset_type, 'clip')", ""),
     "qc_state": ("li.qc_state", "li.qc_state", ""),
     "athlete": ("lower(ltrim(ath.v->>'handle', '@'))",
                 "MAX(COALESCE(NULLIF(ath.v->>'name', ''), '@' || ltrim(ath.v->>'handle', '@')))",
