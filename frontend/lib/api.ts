@@ -6,6 +6,7 @@ import type {
   TrueBlueNetworkSummary, TrueBlueTopAccount, TrueBlueNetworkPost, NetworkMetricsOverTime,
   GA4Snapshot, GSCDailyTotal, GSCQuerySnapshot, GSCPageSnapshot,
   GA4Summary, GSCSummary,
+  LibraryPage, LibraryFacets, LibraryStatus,
 } from "./types";
 
 import { cookies } from "next/headers";
@@ -74,6 +75,11 @@ export const getBrandSummary = (account = "niltv") => apiFetch<BrandSummary>(`/a
 export const getNiltvNetworkPosts = (limit = 500) => apiFetch<NiltvNetworkPost[]>(`/api/brand/network/posts?limit=${limit}`);
 export const getNiltvNetworkSummary = () => apiFetch<NiltvNetworkSummary>("/api/brand/network/summary");
 
+// Content library (fed by the app's ingest). qs = lib/library.ts libraryQuery().
+export const getLibrary = (qs = "") => apiFetch<LibraryPage>(`/api/library/${qs ? `?${qs}` : ""}`);
+export const getLibraryFacets = (qs = "") => apiFetch<LibraryFacets>(`/api/library/facets${qs ? `?${qs}` : ""}`);
+export const getLibraryStatus = () => apiFetch<LibraryStatus>("/api/library/status");
+
 // TrueBlue TV
 export const getTrueBlueProfile = () => apiFetch<TrueBlueSnapshot | null>("/api/trueblue/profile");
 export const getTrueBlueSnapshots = () => apiFetch<TrueBlueSnapshot[]>("/api/trueblue/snapshots");
@@ -100,6 +106,17 @@ export const getNetworkScreenSummary = (mode = "month") =>
   apiFetch<NetworkScreenSummary>(`/api/network-screen/summary?mode=${mode}`);
 export const getNetworkScreenTopPosts = (limit = 20) =>
   apiFetch<NetworkScreenTopPost[]>(`/api/network-screen/top-posts?limit=${limit}`);
+
+// ── YouTube ───────────────────────────────────────────────────────────────────
+
+import type { YoutubeAnalytics, YoutubeStatus, YoutubeSummary, YoutubeVideoPage } from "./types";
+
+export const getYoutubeSummary = () => apiFetch<YoutubeSummary>("/api/youtube/summary");
+export const getYoutubeStatus = () => apiFetch<YoutubeStatus>("/api/youtube/status");
+export const getYoutubeAnalytics = () => apiFetch<YoutubeAnalytics>("/api/youtube/analytics");
+/** One page of uploads; the page sorts and filters the loaded rows itself. */
+export const getYoutubeVideos = (pageSize = 500) =>
+  apiFetch<YoutubeVideoPage>(`/api/youtube/videos?page_size=${pageSize}&sort=views`);
 
 // ── Campus Channels ───────────────────────────────────────────────────────────
 
@@ -138,3 +155,23 @@ export const getCommunityStarProgram = () =>
   apiFetchFresh<CommunityStarProgram>("/api/community-star/program");
 export const getCommunityStarVoteSummary = () =>
   apiFetchFresh<CommunityStarVoteSummary>("/api/community-star/votes/summary");
+
+// ── Athlete directory ─────────────────────────────────────────────────────────
+// Roster-level: admin + general. The backend adds contact fields for admins only.
+
+import type { DirectoryDetail, DirectoryFacets, DirectoryPage } from "./types";
+
+export const getAthleteDirectory = (query: string) =>
+  apiFetch<DirectoryPage>(`/api/athlete-directory/${query ? `?${query}` : ""}`);
+/** includeDeclined is admin-only: the backend answers 403 to anyone else. */
+export const getAthleteDirectoryFacets = (includeDeclined = false) =>
+  apiFetch<DirectoryFacets>(`/api/athlete-directory/facets${includeDeclined ? "?include_declined=true" : ""}`);
+
+/** One person, or null when no record has that key. */
+export async function getAthleteDirectoryPerson(key: string): Promise<DirectoryDetail | null> {
+  const path = `/api/athlete-directory/${encodeURIComponent(key)}`;
+  const res = await fetch(`${BASE}${path}`, { headers: await viewerHeaders(), cache: "no-store" });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`API ${path} → ${res.status}`);
+  return res.json() as Promise<DirectoryDetail>;
+}

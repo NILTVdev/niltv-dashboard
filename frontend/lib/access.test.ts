@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { canSeePage } from "./access";
+import { canSeePage, LIBRARY } from "./access";
 import { CAMPUS_CHANNELS, TRUEBLUETV, TRUEBLUETV_TABS, athletePath } from "./channels";
 
 const tab = (label: string) => TRUEBLUETV_TABS.find((t) => t.label === label)!.href;
@@ -23,11 +23,35 @@ describe("canSeePage", () => {
     }
   });
 
+  it("lets every role open the YouTube page", () => {
+    for (const role of ["admin", "general", "demo"] as const) {
+      expect(canSeePage(role, "/niltv-youtube")).toBe(true);
+    }
+    expect(canSeePage("demo", "/niltv-youtube-old")).toBe(false);
+  });
+
+  it("opens the athlete directory to admin and general, not demo", () => {
+    for (const path of ["/athletes", "/athletes/amb-12", "/athletes/app-40"]) {
+      expect(canSeePage("admin", path)).toBe(true);
+      expect(canSeePage("general", path)).toBe(true);
+      expect(canSeePage("demo", path)).toBe(false);
+    }
+    expect(canSeePage("general", "/athletes-old")).toBe(false);
+  });
+
   it("keeps admin pages to admins", () => {
     for (const path of ["/niltv-onboarding", "/users", "/adminpage"]) {
       expect(canSeePage("general", path)).toBe(false);
       expect(canSeePage("demo", path)).toBe(false);
       expect(canSeePage("admin", path)).toBe(true);
+    }
+  });
+
+  it("opens the content library to admin and general, not demo", () => {
+    for (const path of [LIBRARY, `${LIBRARY}/ig-123`]) {
+      expect(canSeePage("admin", path)).toBe(true);
+      expect(canSeePage("general", path)).toBe(true);
+      expect(canSeePage("demo", path)).toBe(false);
     }
   });
 

@@ -7,7 +7,7 @@ from backend.auth import require_api_key
 from backend.config import get_settings
 from backend.onboarding import vote_outbox
 
-from backend.routers import athletes, snapshots, posts, zoomph, web_analytics, trueblue, reports, brand, ambassadors, network_screen, campus_channels, applications, community_star, community_star_voting, users
+from backend.routers import athletes, snapshots, posts, zoomph, web_analytics, trueblue, reports, brand, ambassadors, network_screen, campus_channels, applications, community_star, community_star_voting, users, youtube, athlete_directory, library
 
 # The interactive docs and OpenAPI schema expose the full route map and auth
 # model, so they are served outside production only.
@@ -61,8 +61,10 @@ app.include_router(trueblue.router, prefix="/api/trueblue", tags=["trueblue"])
 app.include_router(reports.router, prefix="/api/reports", tags=["reports"])
 app.include_router(brand.router, prefix="/api/brand", tags=["brand"])
 app.include_router(ambassadors.router, prefix="/api/ambassadors", tags=["ambassadors"])
+app.include_router(athlete_directory.router, prefix="/api/athlete-directory", tags=["athlete-directory"])
 app.include_router(network_screen.router, prefix="/api/network-screen", tags=["network-screen"])
 app.include_router(campus_channels.router, prefix="/api/campus-channels", tags=["campus-channels"])
+app.include_router(youtube.router, prefix="/api/youtube", tags=["youtube"])
 # Public first: /webhooks/... must win over the admin /{application_id} routes.
 app.include_router(applications.public_router, prefix="/api/applications", tags=["applications"])
 app.include_router(applications.router, prefix="/api/applications", tags=["applications"])
@@ -71,6 +73,8 @@ app.include_router(community_star.public_router, prefix="/api/community-star", t
 app.include_router(community_star.router, prefix="/api/community-star", tags=["community-star"])
 app.include_router(community_star_voting.public_router, prefix="/api/community-star", tags=["community-star"])
 app.include_router(community_star_voting.router, prefix="/api/community-star", tags=["community-star"])
+# The app's ingest Lambda posts its content snapshot to /api/library/sync (key, no account).
+app.include_router(library.router, prefix="/api/library", tags=["library"])
 app.include_router(users.auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 

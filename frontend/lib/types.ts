@@ -365,7 +365,7 @@ export interface NetworkScreenMonthStats {
   avg_views_per_post: number | null;
   format_breakdown: Record<string, NetworkScreenFormatStats>;
   engagement_rate_overall: number | null;
-  collabs_published_monthly: number;
+  collabs_published_monthly: number | null; // null where a platform has no collabs (YouTube)
   collab_data_warning: boolean;
 }
 
@@ -409,6 +409,121 @@ export interface NetworkScreenSummary {
   platforms: NetworkScreenPlatform[];
   aggregate: NetworkScreenAggregate;
   weekly_comparison?: NetworkScreenWeeklyComparison;
+}
+
+// ── YouTube (/api/youtube) ────────────────────────────────────────────────────
+
+export interface YoutubeSnapshotPoint {
+  day: string;
+  subscribers: number | null;
+  total_views: number | null;
+  video_count: number | null;
+}
+
+export interface YoutubeChannelChanges {
+  subscribers_7d: number | null;
+  subscribers_28d: number | null;
+  subscribers_month: number | null;
+  subscribers_prior_month: number | null;
+  views_7d: number | null;
+  views_28d: number | null;
+  views_month: number | null;
+  views_prior_month: number | null;
+}
+
+export interface YoutubeChannelSummary {
+  channel_id: string;
+  title: string | null;
+  handle: string | null;
+  thumbnail_url: string | null;
+  url: string;
+  latest_day: string;
+  pulled_at: string;
+  subscribers: number | null;
+  total_views: number | null;
+  video_count: number | null;
+  changes: YoutubeChannelChanges;
+  series: YoutubeSnapshotPoint[];
+}
+
+export interface YoutubeSummary {
+  channels: YoutubeChannelSummary[];
+  last_pulled: string | null;
+}
+
+export interface YoutubeVideo {
+  video_id: string;
+  channel_id: string;
+  title: string | null;
+  published_at: string | null;
+  duration_sec: number | null;
+  is_short: boolean | null;
+  thumbnail_url: string | null;
+  views: number | null;
+  likes: number | null;
+  comments: number | null;
+  views_per_day: number | null;
+  url: string;
+}
+
+export interface YoutubeVideoPage {
+  total: number;
+  page: number;
+  page_size: number;
+  items: YoutubeVideo[];
+}
+
+export interface YoutubeStatus {
+  configured: boolean;
+  channel_ids: string[];
+  channels_tracked: number;
+  videos_tracked: number;
+  last_pull: string | null;
+  analytics_connected: boolean;
+  last_analytics_pull: string | null;
+}
+
+export interface YoutubeAnalyticsDay {
+  day: string;
+  views: number | null;
+  watch_hours: number | null;
+  average_view_duration_sec: number | null;
+  average_view_percentage: number | null;
+  subscribers_gained: number | null;
+  subscribers_lost: number | null;
+}
+
+export interface YoutubeAnalyticsTotals {
+  days: number;
+  start: string | null;
+  end: string | null;
+  views: number | null;
+  watch_hours: number | null;
+  average_view_duration_sec: number | null;
+  average_view_percentage: number | null;
+  subscribers_net: number | null;
+}
+
+export interface YoutubeAnalyticsVideo {
+  video_id: string;
+  title: string | null;
+  thumbnail_url: string | null;
+  is_short: boolean | null;
+  url: string;
+  views: number | null;
+  watch_hours: number | null;
+  average_view_duration_sec: number | null;
+  average_view_percentage: number | null;
+}
+
+export interface YoutubeAnalytics {
+  connected: boolean;
+  channel_id?: string | null;
+  last_pulled?: string | null;
+  daily?: YoutubeAnalyticsDay[];
+  totals_28d?: YoutubeAnalyticsTotals | null;
+  top_videos_period_end?: string | null;
+  top_videos?: YoutubeAnalyticsVideo[];
 }
 
 export interface NetworkScreenTopPost {
@@ -746,4 +861,225 @@ export interface CommunityStarVoteSummary {
   totals: { confirmed: number; pending: number; void: number };
   mail: { queued: number; sent: number; failed: number };
   flags: CommunityStarVoteFlag[];
+}
+
+// ── Athlete directory (/api/athlete-directory) ────────────────────────────────
+
+export type DirectoryStatus = "ambassador_confirmed" | "roster" | "ambassador_candidate" | "applicant";
+export type DirectorySource = "athlete" | "ambassador" | "application";
+export type DirectorySort = "followers" | "collab_views" | "name" | "newest";
+
+export interface DirectoryPerson {
+  key: string;
+  member_keys: string[];
+  sources: DirectorySource[];
+  display_name: string;
+  sport: string | null;
+  school: string | null;
+  year: string | null;
+  campus: string | null;
+  gender: string | null;
+  status: DirectoryStatus;
+  application_status: string | null;
+  ig_handle: string | null;
+  followers: number | null;
+  followers_source: "ambassador" | "roster" | "application" | null;
+  followers_as_of: string | null;
+  followers_self_reported: boolean;
+  tiktok_handle: string | null;
+  tiktok_followers: number | null;
+  youtube_handle: string | null;
+  youtube_subscribers: number | null;
+  x_handle: string | null;
+  profile_pic_url: string | null;
+  /** Admins only: null for every other role (backend ADMIN_ONLY_FIELDS). */
+  nil_deals_done: string | null;
+  nil_deals_wanted: string | null;
+  content_type: string | null;
+  partner_consent: boolean | null;
+  applied_at: string | null;
+  first_seen: string | null;
+  collab_posts: number | null;
+  collab_views: number | null;
+  collab_engagement: number | null;
+  last_pulled: string | null;
+}
+
+export interface DirectoryPage {
+  total: number;
+  limit: number;
+  offset: number;
+  items: DirectoryPerson[];
+}
+
+export interface DirectoryFacetValue {
+  value: string;
+  count: number;
+}
+
+export interface DirectoryFacets {
+  total: number;
+  sport: DirectoryFacetValue[];
+  school: DirectoryFacetValue[];
+  campus: DirectoryFacetValue[];
+  status: DirectoryFacetValue[];
+}
+
+export interface DirectoryHistoryPoint {
+  pulled_at: string | null;
+  ig_followers: number | null;
+  tiktok_followers: number | null;
+  youtube_subscribers: number | null;
+  source: "roster" | "ambassador" | "reported";
+}
+
+export interface DirectoryPost {
+  post_id: string;
+  account_username: string | null;
+  description: string | null;
+  publish_time: string | null;
+  permalink: string | null;
+  post_type: string | null;
+  media_url: string | null;
+  thumbnail_url: string | null;
+  views: number | null;
+  likes: number | null;
+  comments: number | null;
+  shares: number | null;
+  saves: number | null;
+}
+
+/** Admin-only: the backend leaves `applications` null for every other role. */
+export interface DirectoryApplication {
+  application_id: number;
+  email: string;
+  college_email: string | null;
+  phone: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  status: string;
+  submitted_at: string | null;
+  updated_at: string | null;
+  roster_link: string | null;
+  international: boolean | null;
+  instagram: string | null;
+  instagram_followers: string | null;
+  tiktok: string | null;
+  tiktok_followers: string | null;
+  youtube: string | null;
+  youtube_subscribers: string | null;
+  other_followers: string | null;
+  purpose: string | null;
+  description: string | null;
+  answers: unknown;
+  consent_program_email: boolean;
+  consent_sms: boolean;
+  consent_marketing: boolean;
+  consent_partners: boolean;
+  consent_at: string | null;
+}
+
+export interface DirectoryDetail {
+  person: DirectoryPerson;
+  history: DirectoryHistoryPoint[];
+  posts: DirectoryPost[];
+  /** Library clips that tag one of their Instagram handles, newest first. */
+  clips: LibraryItem[];
+  clips_total: number;
+  applications: DirectoryApplication[] | null;
+}
+
+// ── Content library (/api/library, backend/routers/library.py) ──────────────
+
+export interface LibraryAthlete {
+  id: string | null;
+  name: string | null;
+  handle: string | null;
+  /** Athletes page key (/athletes/{key}) when the directory knows this handle. */
+  directory_key?: string | null;
+}
+
+/** Instagram numbers joined by media id. null = not known, never 0. */
+export interface LibraryPerformance {
+  matched: boolean;
+  /** The network pull, or the brand account pull when the network has no row. */
+  source?: "network" | "brand" | null;
+  views: number | null;
+  likes: number | null;
+  comments: number | null;
+  shares: number | null;
+  saves: number | null;
+  reach: number | null;
+  interactions: number | null;
+  permalink: string | null;
+}
+
+export interface LibraryItem {
+  content_id: string;
+  stage: string;
+  ig_post_id: string | null;
+  channel_id: string | null;
+  channel_name: string | null;
+  title: string;
+  caption: string | null;
+  summary: string | null;
+  keywords: string[];
+  sport: string | null;
+  school: string | null;
+  content_type: string | null;
+  content_types: string[];
+  categories: string[];
+  sponsor: string | null;
+  athletes: LibraryAthlete[];
+  unresolved_handles: string[];
+  status: string;
+  qc_state: string | null;
+  poster_url: string | null;
+  video_url: string | null;
+  duration_sec: number | null;
+  posted_at: string | null;
+  updated_at: string | null;
+  removed: boolean;
+  first_seen_at: string;
+  last_synced_at: string;
+  performance: LibraryPerformance;
+}
+
+export interface LibraryPage {
+  total: number;
+  limit: number;
+  offset: number;
+  items: LibraryItem[];
+}
+
+export interface LibraryFacetValue {
+  value: string;
+  label: string;
+  count: number;
+}
+
+export type LibraryFacetKey =
+  "sport" | "school" | "channel" | "content_type" | "category" | "sponsor" | "qc_state" | "athlete";
+
+export type LibraryFacets = Record<LibraryFacetKey, LibraryFacetValue[]>;
+
+export interface LibrarySyncRun {
+  id: number;
+  received_at: string;
+  stage: string | null;
+  generated_at: string | null;
+  received: number;
+  upserted: number;
+  removed: number;
+  ok: boolean;
+  error: string | null;
+}
+
+export interface LibraryStatus {
+  last_run: LibrarySyncRun | null;
+  last_ok_run: LibrarySyncRun | null;
+  items: number;
+  removed: number;
+  needs_tagging: number;
+  by_qc_state: { qc_state: string | null; count: number }[];
 }

@@ -1,7 +1,8 @@
 from sqlalchemy import (
     Column, Index, Integer, Text, Boolean, Numeric, BigInteger,
-    TIMESTAMP, ForeignKey, JSON, UniqueConstraint,
+    TIMESTAMP, ForeignKey, JSON, UniqueConstraint, Date, Float,
 )
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -803,3 +804,162 @@ class ApplicationEvent(Base):
     detail = Column(JSON)
 
     application = relationship("Application", back_populates="events")
+
+
+# ── YouTube (migration 035) ─────────────────────────────────────────────────
+
+class YoutubeChannel(Base):
+    """A tracked YouTube channel (YOUTUBE_CHANNEL_IDS), refreshed by run_youtube."""
+    __tablename__ = "youtube_channels"
+
+    channel_id = Column(Text, primary_key=True)
+    title = Column(Text)
+    handle = Column(Text)
+    uploads_playlist_id = Column(Text)
+    thumbnail_url = Column(Text)
+    updated_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+
+
+class YoutubeChannelSnapshot(Base):
+    """Channel totals, one row per channel per UTC day (upserted)."""
+    __tablename__ = "youtube_channel_snapshots"
+    __table_args__ = (
+        UniqueConstraint("channel_id", "day", name="uq_youtube_channel_snapshot_day"),
+        Index("idx_youtube_channel_snap_pulled", "pulled_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    channel_id = Column(Text, ForeignKey("youtube_channels.channel_id", ondelete="CASCADE"), nullable=False)
+    day = Column(Date, nullable=False)
+    pulled_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+    subscribers = Column(BigInteger)     # NULL when the channel hides the count
+    total_views = Column(BigInteger)
+    video_count = Column(Integer)
+
+
+class YoutubeVideo(Base):
+    """One upload with its current counts. is_short = duration <= 180 s
+    (the Data API reports neither Shorts nor aspect ratio)."""
+    __tablename__ = "youtube_videos"
+    __table_args__ = (
+        Index("idx_youtube_videos_channel_published", "channel_id", "published_at"),
+    )
+
+    video_id = Column(Text, primary_key=True)
+    channel_id = Column(Text, ForeignKey("youtube_channels.channel_id", ondelete="CASCADE"), nullable=False)
+    title = Column(Text)
+    published_at = Column(TIMESTAMP(timezone=True))
+    duration_sec = Column(Integer)
+    is_short = Column(Boolean)
+    thumbnail_url = Column(Text)
+    views = Column(BigInteger)
+    likes = Column(BigInteger)
+    comments = Column(BigInteger)
+    updated_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+
+
+class YoutubeVideoSnapshot(Base):
+    """Per-video counts, one row per video per UTC day (upserted)."""
+    __tablename__ = "youtube_video_snapshots"
+    __table_args__ = (
+        UniqueConstraint("video_id", "day", name="uq_youtube_video_snapshot_day"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    video_id = Column(Text, ForeignKey("youtube_videos.video_id", ondelete="CASCADE"), nullable=False)
+    day = Column(Date, nullable=False)
+    views = Column(BigInteger)
+    likes = Column(BigInteger)
+    comments = Column(BigInteger)
+
+
+class YoutubeDailyAnalytics(Base):
+    """YouTube Analytics channel metrics for one day (owner consent required)."""
+    __tablename__ = "youtube_daily_analytics"
+    __table_args__ = (
+        UniqueConstraint("channel_id", "day", name="uq_youtube_daily_analytics_day"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    channel_id = Column(Text, nullable=False)
+    day = Column(Date, nullable=False)
+    views = Column(BigInteger)
+    estimated_minutes_watched = Column(BigInteger)
+    average_view_duration_sec = Column(Integer)
+    average_view_percentage = Column(Numeric)
+    subscribers_gained = Column(Integer)
+    subscribers_lost = Column(Integer)
+    pulled_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+
+
+class YoutubeVideoAnalytics(Base):
+    """YouTube Analytics per-video totals over window_days ending on period_end."""
+    __tablename__ = "youtube_video_analytics"
+    __table_args__ = (
+        UniqueConstraint("video_id", "period_end", "window_days", name="uq_youtube_video_analytics_period"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    video_id = Column(Text, nullable=False)
+    period_end = Column(Date, nullable=False)
+    window_days = Column(Integer, nullable=False)
+    views = Column(BigInteger)
+    estimated_minutes_watched = Column(BigInteger)
+    average_view_duration_sec = Column(Integer)
+    average_view_percentage = Column(Numeric)
+    pulled_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+
+
+# ── Content library (migration 036) ─────────────────────────────────────────
+
+class LibraryItem(Base):
+    """One clip in the content library (migration 036), as the NIL TV app's
+    ingest labelled it. Written only by POST /api/library/sync; a full
+    snapshot marks this stage's missing rows removed instead of deleting them.
+    ig_post_id joins niltv_network_posts.post_id for performance numbers.
+    The generated ``search`` tsvector column is read through raw SQL only, so
+    it is not mapped here (the ORM must never try to write it)."""
+    __tablename__ = "library_items"
+
+    content_id = Column(Text, primary_key=True)
+    stage = Column(Text, nullable=False)
+    ig_post_id = Column(Text)
+    channel_id = Column(Text)
+    channel_name = Column(Text)
+    title = Column(Text, nullable=False, default="")
+    caption = Column(Text)
+    summary = Column(Text)
+    keywords = Column(ARRAY(Text), nullable=False, default=list)
+    sport = Column(Text)
+    school = Column(Text)
+    content_type = Column(Text)
+    content_types = Column(ARRAY(Text), nullable=False, default=list)
+    categories = Column(ARRAY(Text), nullable=False, default=list)
+    sponsor = Column(Text)
+    athletes = Column(JSONB, nullable=False, default=list)
+    unresolved_handles = Column(ARRAY(Text), nullable=False, default=list)
+    status = Column(Text, nullable=False, default="")
+    qc_state = Column(Text)
+    poster_url = Column(Text)
+    video_url = Column(Text)
+    duration_sec = Column(Float)
+    posted_at = Column(TIMESTAMP(timezone=True))
+    updated_at = Column(TIMESTAMP(timezone=True))
+    removed = Column(Boolean, nullable=False, default=False)
+    first_seen_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+    last_synced_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+
+
+class LibrarySyncRun(Base):
+    """One call to POST /api/library/sync, accepted or refused (migration 036)."""
+    __tablename__ = "library_sync_runs"
+
+    id = Column(Integer, primary_key=True)
+    received_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+    stage = Column(Text)
+    generated_at = Column(TIMESTAMP(timezone=True))
+    received = Column(Integer, nullable=False, default=0)
+    upserted = Column(Integer, nullable=False, default=0)
+    removed = Column(Integer, nullable=False, default=0)
+    ok = Column(Boolean, nullable=False, default=False)
+    error = Column(Text)
