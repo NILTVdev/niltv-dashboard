@@ -69,7 +69,7 @@ function changeSub(n: number | null, period: string): string | undefined {
 function FormatBadge({ short }: { short: boolean | null }) {
   if (short == null) return <span className="text-xs text-[#94a3b8]">—</span>;
   return (
-    <span className={`inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded ${short ? "bg-[#F5E9BE] text-[#7a5d00]" : "bg-[#f1f5f9] text-[#475569]"}`}>
+    <span className={`inline-block w-fit self-start text-[10px] font-semibold px-1.5 py-0.5 rounded ${short ? "bg-[#F5E9BE] text-[#7a5d00]" : "bg-[#f1f5f9] text-[#475569]"}`}>
       {short ? "Short" : "Long"}
     </span>
   );
