@@ -4,7 +4,7 @@ import { ExternalLink, Eye, Lock } from "lucide-react";
 import FollowerChart from "./FollowerChart";
 import PostsGrid from "./PostsGrid";
 import AthleteAvatar from "./AthleteAvatar";
-import { SelfReported, StatusBadge } from "./AthleteDirectoryView";
+import { SelfReported } from "./AthleteDirectoryView";
 import InstagramIcon from "./icons/InstagramIcon";
 import { fmt, fmtDate } from "@/lib/utils";
 import { Poster } from "./LibraryView";
@@ -20,12 +20,12 @@ interface Props {
 
 const SOURCE_LABEL: Record<DirectorySource, string> = {
   athlete: "Duke roster",
-  ambassador: "Ambassador registry",
+  ambassador: "NIL TV athlete record",
   application: "Signup form",
 };
 
 const FOLLOWER_SOURCE_LABEL = {
-  ambassador: "Measured, ambassador pull",
+  ambassador: "Measured, NIL TV pull",
   roster: "Measured, roster pull",
   application: "Self-reported on the signup form",
 } as const;
@@ -171,7 +171,6 @@ export default function AthleteDetailView({ detail, gridPosts }: Props) {
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="break-words text-2xl font-bold text-[#0f172a]">{p.display_name}</h1>
-              <StatusBadge status={p.status} />
             </div>
             <p className="mt-1 text-sm text-[#64748b]">
               {[p.sport, p.school, p.year, p.gender].filter(Boolean).join(" · ") || "No sport or school on record"}

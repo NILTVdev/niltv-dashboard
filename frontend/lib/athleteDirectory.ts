@@ -4,7 +4,7 @@
  */
 
 import type {
-  DirectoryPerson, DirectoryPost, DirectorySort, DirectoryStatus, Post,
+  DirectoryPerson, DirectoryPost, DirectorySort, Post,
 } from "./types";
 import { fmt } from "./utils";
 
@@ -18,13 +18,6 @@ export function clipsTitle(shown: number, total: number): string {
   if (!total) return "Library clips";
   return shown < total ? `Library clips (newest ${shown} of ${fmt(total)})` : `Library clips (${fmt(total)})`;
 }
-
-export const STATUS_LABEL: Record<DirectoryStatus, string> = {
-  ambassador_confirmed: "Ambassador",
-  roster: "Roster",
-  ambassador_candidate: "Candidate",
-  applicant: "Applicant",
-};
 
 export const SORT_LABEL: Record<DirectorySort, string> = {
   followers: "Most followers",
@@ -47,22 +40,15 @@ export interface DirectoryFilters {
   sport: string;
   school: string;
   campus: string;
-  status: DirectoryStatus | "";
-  partner_consent: "" | "true" | "false";
   followers: string; // a FOLLOWER_RANGES key
-  /** Admins only: also list declined signups. The backend hides them by
-   * default and refuses this flag (403) for any other role. */
-  include_declined: boolean;
   sort: DirectorySort;
   page: number; // 0-based
 }
 
 export const EMPTY_FILTERS: DirectoryFilters = {
-  q: "", sport: "", school: "", campus: "", status: "", partner_consent: "", followers: "",
-  include_declined: false, sort: "followers", page: 0,
+  q: "", sport: "", school: "", campus: "", followers: "", sort: "followers", page: 0,
 };
 
-const STATUSES = Object.keys(STATUS_LABEL) as DirectoryStatus[];
 const SORTS = Object.keys(SORT_LABEL) as DirectorySort[];
 
 type ParamSource = { get(name: string): string | null };
@@ -70,9 +56,7 @@ type ParamSource = { get(name: string): string | null };
 /** Filters from the page URL. Unknown values fall back to the defaults. */
 export function filtersFromParams(params: ParamSource): DirectoryFilters {
   const pick = (name: string) => (params.get(name) ?? "").trim();
-  const status = pick("status") as DirectoryStatus;
   const sort = pick("sort") as DirectorySort;
-  const consent = pick("partner_consent");
   const followers = pick("followers");
   const page = Number.parseInt(pick("page"), 10);
   return {
@@ -80,10 +64,7 @@ export function filtersFromParams(params: ParamSource): DirectoryFilters {
     sport: pick("sport"),
     school: pick("school"),
     campus: pick("campus"),
-    status: STATUSES.includes(status) ? status : "",
-    partner_consent: consent === "true" || consent === "false" ? consent : "",
     followers: FOLLOWER_RANGES.some((r) => r.key === followers) ? followers : "",
-    include_declined: pick("include_declined") === "true",
     sort: SORTS.includes(sort) ? sort : EMPTY_FILTERS.sort,
     page: Number.isFinite(page) && page > 0 ? page : 0,
   };
@@ -92,11 +73,10 @@ export function filtersFromParams(params: ParamSource): DirectoryFilters {
 /** The page URL's query string: only what differs from the defaults. */
 export function filtersToPageQuery(f: DirectoryFilters): string {
   const p = new URLSearchParams();
-  for (const name of ["q", "sport", "school", "campus", "status", "partner_consent", "followers"] as const) {
+  for (const name of ["q", "sport", "school", "campus", "followers"] as const) {
     const v = f[name].trim();
     if (v) p.set(name, v);
   }
-  if (f.include_declined) p.set("include_declined", "true");
   if (f.sort !== EMPTY_FILTERS.sort) p.set("sort", f.sort);
   if (f.page > 0) p.set("page", String(f.page));
   return p.toString();
@@ -106,14 +86,13 @@ export function filtersToPageQuery(f: DirectoryFilters): string {
  * out when `paged` is false (the CSV export takes every match). */
 export function filtersToApiQuery(f: DirectoryFilters, paged = true): string {
   const p = new URLSearchParams();
-  for (const name of ["q", "sport", "school", "campus", "status", "partner_consent"] as const) {
+  for (const name of ["q", "sport", "school", "campus"] as const) {
     const v = f[name].trim();
     if (v) p.set(name, v);
   }
   const range = FOLLOWER_RANGES.find((r) => r.key === f.followers);
   if (range && "min" in range) p.set("min_followers", String(range.min));
   if (range && "max" in range) p.set("max_followers", String(range.max));
-  if (f.include_declined) p.set("include_declined", "true");
   p.set("sort", f.sort);
   if (paged) {
     p.set("limit", String(PAGE_SIZE));
@@ -123,8 +102,7 @@ export function filtersToApiQuery(f: DirectoryFilters, paged = true): string {
 }
 
 export function activeFilterCount(f: DirectoryFilters): number {
-  return (["sport", "school", "campus", "status", "partner_consent", "followers"] as const)
-    .filter((name) => f[name] !== "").length + (f.include_declined ? 1 : 0);
+  return (["sport", "school", "campus", "followers"] as const).filter((name) => f[name] !== "").length;
 }
 
 /** Up to two initials for the photo placeholder. */

@@ -20,7 +20,7 @@ export default async function AthletePage({ params }: Props) {
 
   const detail = await getAthleteDirectoryPerson(decoded);
   if (!detail) notFound();
-  // An older record key (say, the signup before they became an ambassador)
+  // An older record key (say, the signup before they joined NIL TV)
   // goes to the person's current page.
   if (detail.person.key !== decoded) redirect(personPath(detail.person.key));
 

@@ -71,8 +71,12 @@ def seeded(db):
     roster = Athlete(name="Rory Roster", sport="Soccer", ig_handle="rory.roster", cached_last_pulled=T0)
     amber = Ambassador(ig_username="amber.amb", previous_usernames="amber.old", display_name="Amber Ambassador",
                        status="confirmed", sport="Lacrosse")
-    db.add_all([roster, amber])
+    cole = Ambassador(ig_username="cole.amb", display_name="Cole Confirmed", status="confirmed")
+    db.add_all([roster, amber, cole])
     db.flush()
+    # Rory is on the roster and a confirmed ambassador, so a NIL TV athlete.
+    db.add(Ambassador(ig_username="rory.roster", display_name="Rory Roster", status="confirmed",
+                      athlete_id=roster.id))
     db.add(Application(email="ivy@example.com", first_name="Ivy", last_name="Applicant",
                        instagram="instagram.com/ivy.app"))
     db.commit()
@@ -87,7 +91,7 @@ def seeded(db):
     db.add(LibraryItem(content_id="c-removed", stage="dev", title="Removed clip", status="published",
                        athletes=[{"id": None, "name": None, "handle": "amber.amb"}], removed=True))
     db.commit()
-    return {"roster": roster.id, "amber": amber.id}
+    return {"roster": roster.id, "amber": amber.id, "cole": cole.id}
 
 
 def test_keys_by_handle_prefers_current_owner():
@@ -123,9 +127,8 @@ def test_unresolved_handle_counts_as_featuring(seeded):
     assert [c["content_id"] for c in body["clips"]] == ["c-unresolved"]
 
 
-def test_person_without_clips_gets_empty_list(seeded, db):
-    app_id = db.query(Application.id).filter(Application.email == "ivy@example.com").scalar()
-    body = client.get(f"/api/athlete-directory/app-{app_id}", headers=KEY).json()
+def test_person_without_clips_gets_empty_list(seeded):
+    body = client.get(f"/api/athlete-directory/amb-{seeded['cole']}", headers=KEY).json()
     assert body["clips"] == [] and body["clips_total"] == 0
     # The internal handle list never leaks into the person payload.
     assert "ig_handles" not in body["person"]

@@ -164,8 +164,7 @@ import type { DirectoryDetail, DirectoryFacets, DirectoryPage } from "./types";
 export const getAthleteDirectory = (query: string) =>
   apiFetch<DirectoryPage>(`/api/athlete-directory/${query ? `?${query}` : ""}`);
 /** includeDeclined is admin-only: the backend answers 403 to anyone else. */
-export const getAthleteDirectoryFacets = (includeDeclined = false) =>
-  apiFetch<DirectoryFacets>(`/api/athlete-directory/facets${includeDeclined ? "?include_declined=true" : ""}`);
+export const getAthleteDirectoryFacets = () => apiFetch<DirectoryFacets>("/api/athlete-directory/facets");
 
 /** One person, or null when no record has that key. */
 export async function getAthleteDirectoryPerson(key: string): Promise<DirectoryDetail | null> {
