@@ -14,7 +14,6 @@ import { CAMPUS_CHANNELS } from "@/lib/channels";
 const LINKS = [
   { href: "/niltv", label: "Network" },
   { href: "/niltv-channels", label: "Channel Insights" },
-  { href: "/niltv-youtube", label: "YouTube" },
   { href: CAMPUS_CHANNELS, label: "Campus Channels" },
   { href: "/athletes", label: "Athletes" },
   { href: LIBRARY, label: "Library" },

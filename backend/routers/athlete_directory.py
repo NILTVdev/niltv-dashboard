@@ -1,5 +1,5 @@
-"""Athlete directory: one searchable list over the roster, the ambassador
-registry and the signups (merge rules in backend/athlete_directory.py).
+"""Athlete directory: NIL TV athletes, searchable (merge rules in
+backend/athlete_directory.py).
 
 Read access: admin and general (backend/accounts.py lists the prefix with the
 roster pages); demo is refused there. Contact fields and free-text application
@@ -8,9 +8,9 @@ only, and the CSV export is admin-only, so a general account never receives
 them, whatever the page shows.
 
 Defaults enforced here, not in the page:
-  * Declined signups are left out of the list, the facets and the detail
-    route. ``include_declined=true`` brings them back, for admins only (403
-    for anyone else).
+  * Every route covers NIL TV athletes only (a confirmed ambassador record,
+    directory.is_niltv_athlete). Roster-only, candidate and applicant records
+    are not listed, counted, exported or given a detail page.
   * directory.ADMIN_ONLY_FIELDS (NIL deals done and wanted, content
     description) are null in every response to a non-admin.
 """
@@ -179,27 +179,19 @@ def _query(
     sport: Optional[str] = Query(None, max_length=200),
     school: Optional[str] = Query(None, max_length=200),
     campus: Optional[str] = Query(None, max_length=200),
-    status: Optional[str] = Query(None, description=" | ".join(directory.STATUSES)),
-    source: Optional[str] = Query(None, description=" | ".join(directory.SOURCES)),
-    partner_consent: Optional[bool] = Query(None),
     min_followers: Optional[int] = Query(None, ge=0),
     max_followers: Optional[int] = Query(None, ge=0),
     has_content: Optional[bool] = Query(None, description="has NIL TV collab posts"),
-    include_declined: bool = Query(False, description="admins only: also list declined signups"),
     sort: str = Query("followers", description=" | ".join(directory.SORTS)),
 ) -> directory.Query:
-    if include_declined and not is_admin(request):
-        raise HTTPException(status_code=403, detail="Your account does not have access to this")
-    if status is not None and status not in directory.STATUSES:
-        raise HTTPException(status_code=400, detail=f"status must be one of {', '.join(directory.STATUSES)}")
-    if source is not None and source not in directory.SOURCES:
-        raise HTTPException(status_code=400, detail=f"source must be one of {', '.join(directory.SOURCES)}")
     if sort not in directory.SORTS:
         raise HTTPException(status_code=400, detail=f"sort must be one of {', '.join(directory.SORTS)}")
-    return directory.Query(q=q, sport=sport, school=school, campus=campus, status=status, source=source,
-                           partner_consent=partner_consent, min_followers=min_followers,
-                           max_followers=max_followers, has_content=has_content,
-                           include_declined=include_declined, sort=sort)
+    return directory.Query(q=q, sport=sport, school=school, campus=campus, min_followers=min_followers,
+                           max_followers=max_followers, has_content=has_content, sort=sort)
+
+
+def _people(db: Session) -> list[dict]:
+    return directory.niltv_athletes(directory.build_directory(db))
 
 
 @router.get("/", response_model=DirectoryPage)
@@ -210,22 +202,14 @@ def list_people(
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):
-    matched = directory.apply(directory.build_directory(db), f)
+    matched = directory.apply(_people(db), f)
     return DirectoryPage(total=len(matched), limit=limit, offset=offset,
                          items=[person_out(p, is_admin(request)) for p in matched[offset:offset + limit]])
 
 
 @router.get("/facets", response_model=FacetsOut)
-def get_facets(
-    request: Request,
-    include_declined: bool = Query(False, description="admins only: count declined signups too"),
-    db: Session = Depends(get_db),
-):
-    if include_declined and not is_admin(request):
-        raise HTTPException(status_code=403, detail="Your account does not have access to this")
-    people = directory.build_directory(db)
-    if not include_declined:
-        people = [p for p in people if not directory.is_declined(p)]
+def get_facets(db: Session = Depends(get_db)):
+    people = _people(db)
     return FacetsOut(total=len(people), **directory.facets(people))
 
 
@@ -257,7 +241,7 @@ def export_csv(request: Request, f: directory.Query = Depends(_query), db: Sessi
     Admin-only here and in accounts.ADMIN_ONLY_PREFIXES."""
     if not is_admin(request):
         raise HTTPException(status_code=403, detail="Your account does not have access to this")
-    people = directory.apply(directory.build_directory(db), f)
+    people = directory.apply(_people(db), f)
     contacts = directory.contacts_by_application(db, [p["application_ids"][0] for p in people
                                                        if p["application_ids"]])
     out = io.StringIO()
@@ -314,8 +298,9 @@ def _posts(db: Session, person: dict) -> list[PostOut]:
 def get_person(key: str, request: Request, db: Session = Depends(get_db)):
     admin = is_admin(request)
     person = directory.resolve_key(directory.build_directory(db), key)
-    # A declined signup is hidden from non-admins here too, not only in the list.
-    if person is None or (directory.is_declined(person) and not admin):
+    # Only NIL TV athletes have a page (an old applicant key that now resolves
+    # to a confirmed ambassador still works).
+    if person is None or not directory.is_niltv_athlete(person):
         raise HTTPException(status_code=404, detail="Athlete not found")
     clips_total, clips = clips_for_handles(db, person["ig_handles"])
     detail = PersonDetailOut(person=person_out(person, admin), history=_history(db, person),

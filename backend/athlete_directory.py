@@ -551,13 +551,28 @@ def is_declined(p: dict) -> bool:
     return p["status"] == "applicant" and p.get("application_status") == DECLINED
 
 
+# The Athletes pages list NIL TV athletes only: people with a confirmed
+# ambassador record. Roster-only (Duke), candidate and applicant records still
+# merge into a person (they add handles, sport, school), but on their own they
+# are not shown.
+NILTV_STATUS = "ambassador_confirmed"
+
+
+def is_niltv_athlete(p: dict) -> bool:
+    return p["status"] == NILTV_STATUS
+
+
+def niltv_athletes(people: list[dict]) -> list[dict]:
+    return [p for p in people if is_niltv_athlete(p)]
+
+
 def keys_by_handle(people: list[dict]) -> dict[str, str]:
-    """Normalized Instagram handle -> person key. A person's main handle wins
-    over a handle someone else used before (a previous username or an old
-    signup), so a handle that changed owners points at its current owner.
-    Declined signups get no key: their page is hidden by default."""
+    """Normalized Instagram handle -> person key, for NIL TV athletes only (the
+    only people with an Athletes page). A person's main handle wins over a
+    handle someone else used before (a previous username or an old signup), so
+    a handle that changed owners points at its current owner."""
     out: dict[str, str] = {}
-    people = [p for p in people if not is_declined(p)]
+    people = niltv_athletes(people)
     for p in people:
         if p["ig_handle"]:
             out.setdefault(p["ig_handle"], p["key"])

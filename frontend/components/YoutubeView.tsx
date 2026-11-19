@@ -4,9 +4,9 @@ import { useMemo, useState } from "react";
 import {
   Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
-import { Clock, ExternalLink, Eye, Film, Link2Off, Percent, Search, Timer, Users } from "lucide-react";
+import { Clock, ExternalLink, Eye, Film, Percent, Search, Timer, Users } from "lucide-react";
 import type {
-  YoutubeAnalytics, YoutubeChannelSummary, YoutubeSnapshotPoint, YoutubeStatus, YoutubeSummary,
+  YoutubeAnalytics, YoutubeChannelSummary, YoutubeSnapshotPoint, YoutubeSummary,
   YoutubeVideo, YoutubeVideoPage,
 } from "@/lib/types";
 import { COLORS } from "@/lib/theme";
@@ -256,31 +256,11 @@ function VideoTable({ page, nowMs }: { page: YoutubeVideoPage; nowMs: number }) 
 
 /* ── Analytics ────────────────────────────────────────── */
 
-function NotConnected() {
-  return (
-    <div className="flex items-start gap-3 rounded-xl bg-[#f8fafc] border border-dashed border-[#cbd5e1] px-4 py-5">
-      <Link2Off size={18} className="mt-0.5 shrink-0 text-[#94a3b8]" />
-      <div className="text-sm text-[#475569] space-y-1">
-        <p className="font-semibold text-[#0f172a]">Not connected</p>
-        <p>Watch time and retention come from YouTube Analytics. The channel owner must approve read-only access once with their Google login.</p>
-        <p className="text-xs text-[#64748b]">Staff then add the access token to the server. The next nightly pull fills this section. The steps are in the YouTube section of the dashboard README.</p>
-      </div>
-    </div>
-  );
-}
-
-function AnalyticsSection({ analytics }: { analytics: YoutubeAnalytics | null }) {
-  if (!analytics) {
-    return <Section title="Watch Time and Retention"><Empty>Could not load YouTube Analytics.</Empty></Section>;
-  }
-  if (!analytics.connected) {
-    return <Section title="Watch Time and Retention"><NotConnected /></Section>;
-  }
-  const t = analytics.totals_28d;
+/** Watch time and retention. Shown only once YouTube Analytics is connected
+ * and has data: the tab shows what we have, nothing else. */
+function AnalyticsSection({ analytics }: { analytics: YoutubeAnalytics }) {
+  const t = analytics.totals_28d!;
   const daily = analytics.daily ?? [];
-  if (!t || !daily.length) {
-    return <Section title="Watch Time and Retention"><Empty>Connected. The first nightly pull fills this section.</Empty></Section>;
-  }
   const chart = daily.slice(-28).map((d) => ({ day: fmtDate(d.day), hours: d.watch_hours }));
   const top = analytics.top_videos ?? [];
   const period = t.start && t.end ? `${fmtDate(t.start)} to ${fmtDate(t.end)}` : "Last 28 days";
@@ -305,37 +285,39 @@ function AnalyticsSection({ analytics }: { analytics: YoutubeAnalytics | null })
         </BarChart>
       </ResponsiveContainer>
 
-      <h3 className="text-xs font-semibold text-[#64748b] uppercase tracking-wide mt-6 mb-2">Top videos by watch time</h3>
-      {!top.length ? <Empty>No video totals yet.</Empty> : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[36rem] text-sm">
-            <thead>
-              <tr className="border-b border-[#e2e8f0] text-left text-[#64748b]">
-                <th className="py-2 pr-3 font-medium">Video</th>
-                <th className="py-2 pr-3 font-medium text-right">Watch hours</th>
-                <th className="py-2 pr-3 font-medium text-right">Views</th>
-                <th className="py-2 pr-3 font-medium text-right">Avg duration</th>
-                <th className="py-2 font-medium text-right">Avg % viewed</th>
-              </tr>
-            </thead>
-            <tbody>
-              {top.map((v) => (
-                <tr key={v.video_id} className="border-b border-[#f1f5f9] last:border-0">
-                  <td className="py-2 pr-3">
-                    <a href={v.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 min-w-0 hover:text-[#7a5d00]">
-                      <Thumb src={v.thumbnail_url} />
-                      <span className="line-clamp-2">{v.title ?? v.video_id}</span>
-                    </a>
-                  </td>
-                  <td className="py-2 pr-3 text-right font-semibold text-[#0f172a]">{fmtHours(v.watch_hours)}</td>
-                  <td className="py-2 pr-3 text-right text-[#475569]">{fmt(v.views)}</td>
-                  <td className="py-2 pr-3 text-right text-[#475569]">{fmtDuration(v.average_view_duration_sec)}</td>
-                  <td className="py-2 text-right text-[#475569]">{fmtPercent(v.average_view_percentage)}</td>
+      {top.length > 0 && (
+        <>
+          <h3 className="text-xs font-semibold text-[#64748b] uppercase tracking-wide mt-6 mb-2">Top videos by watch time</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[36rem] text-sm">
+              <thead>
+                <tr className="border-b border-[#e2e8f0] text-left text-[#64748b]">
+                  <th className="py-2 pr-3 font-medium">Video</th>
+                  <th className="py-2 pr-3 font-medium text-right">Watch hours</th>
+                  <th className="py-2 pr-3 font-medium text-right">Views</th>
+                  <th className="py-2 pr-3 font-medium text-right">Avg duration</th>
+                  <th className="py-2 font-medium text-right">Avg % viewed</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {top.map((v) => (
+                  <tr key={v.video_id} className="border-b border-[#f1f5f9] last:border-0">
+                    <td className="py-2 pr-3">
+                      <a href={v.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 min-w-0 hover:text-[#7a5d00]">
+                        <Thumb src={v.thumbnail_url} />
+                        <span className="line-clamp-2">{v.title ?? v.video_id}</span>
+                      </a>
+                    </td>
+                    <td className="py-2 pr-3 text-right font-semibold text-[#0f172a]">{fmtHours(v.watch_hours)}</td>
+                    <td className="py-2 pr-3 text-right text-[#475569]">{fmt(v.views)}</td>
+                    <td className="py-2 pr-3 text-right text-[#475569]">{fmtDuration(v.average_view_duration_sec)}</td>
+                    <td className="py-2 text-right text-[#475569]">{fmtPercent(v.average_view_percentage)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </Section>
   );
@@ -343,91 +325,62 @@ function AnalyticsSection({ analytics }: { analytics: YoutubeAnalytics | null })
 
 /* ── Root ─────────────────────────────────────────────── */
 
-export default function YoutubeView({ summary, videos, status, analytics }: {
+export interface YoutubeData {
   summary: YoutubeSummary | null;
   videos: YoutubeVideoPage | null;
-  status: YoutubeStatus | null;
   analytics: YoutubeAnalytics | null;
-}) {
+}
+
+/** The YouTube tab of Channel Insights: channel totals, growth, the video
+ * list and (once connected) watch time. Sections with no data are left out. */
+export default function YoutubeDetail({ summary, videos, analytics }: YoutubeData) {
   const [nowMs] = useState(() => Date.now());
+  const channels = summary?.channels ?? [];
+  const hasAnalytics = Boolean(analytics?.connected && analytics.totals_28d && analytics.daily?.length);
+  const watchHours = hasAnalytics ? analytics!.totals_28d!.watch_hours : null;
 
-  const header = (
-    <div>
-      <h1 className="text-2xl font-bold text-[#0f172a]">YouTube</h1>
-      <p className="text-sm text-[#64748b] mt-1">
-        NIL TV on YouTube. Counts update every night.
-        {summary?.last_pulled && <span className="text-[#94a3b8]"> Last pull {fmtDate(summary.last_pulled)}.</span>}
-      </p>
-    </div>
-  );
-
-  if (!summary) {
-    return (
-      <main className="max-w-6xl mx-auto px-4 py-8 flex flex-col gap-6">
-        {header}
-        <Empty>Could not load YouTube data. Check that the API is reachable.</Empty>
-      </main>
-    );
-  }
-
-  if (!summary.channels.length) {
-    return (
-      <main className="max-w-6xl mx-auto px-4 py-8 flex flex-col gap-6">
-        {header}
-        <section className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm p-6 text-center">
-          <Film size={28} className="mx-auto mb-3 text-[#cbd5e1]" />
-          <p className="text-sm font-semibold text-[#0f172a]">No YouTube data yet</p>
-          <p className="text-sm text-[#64748b] mt-1">
-            {status && !status.configured
-              ? "Staff add a YouTube API key to the server. The nightly pull then fills this page."
-              : "The first nightly pull fills this page."}
-          </p>
-        </section>
-        <AnalyticsSection analytics={analytics} />
-      </main>
-    );
-  }
-
-  const watchHours = analytics?.connected ? analytics.totals_28d?.watch_hours ?? null : null;
+  if (!channels.length && !videos?.items.length && !hasAnalytics) return null;
 
   return (
-    <main className="max-w-6xl mx-auto px-4 py-8 flex flex-col gap-6">
-      {header}
+    <div className="flex flex-col gap-6 min-w-0">
+      {summary?.last_pulled && (
+        <p className="text-xs text-[#94a3b8]">YouTube counts update every night. Last pull {fmtDate(summary.last_pulled)}.</p>
+      )}
 
-      {summary.channels.map((ch) => (
+      {channels.map((ch) => (
         <div key={ch.channel_id} className="flex flex-col gap-4 min-w-0">
-          {summary.channels.length > 1 && (
+          {channels.length > 1 && (
             <a href={ch.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-sm font-semibold text-[#0f172a] hover:text-[#7a5d00]">
               {ch.title ?? ch.channel_id} <ExternalLink size={13} />
             </a>
           )}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          <div className={`grid grid-cols-2 gap-3 sm:gap-4 ${watchHours == null ? "lg:grid-cols-3" : "lg:grid-cols-4"}`}>
             <KPI icon={<Users size={14} />} label="Subscribers" value={fmt(ch.subscribers)} sub={changeSub(ch.changes.subscribers_7d, "in 7 days")} />
             <KPI icon={<Eye size={14} />} label="Total views" value={fmt(ch.total_views)} sub={changeSub(ch.changes.views_7d, "in 7 days")} />
             <KPI icon={<Film size={14} />} label="Videos" value={fmt(ch.video_count)} />
-            <KPI icon={<Clock size={14} />} label="Watch hours · 28 days"
-                 value={watchHours == null ? "—" : fmtHours(watchHours)}
-                 sub={analytics?.connected ? undefined : "Not connected"} />
+            {watchHours != null && (
+              <KPI icon={<Clock size={14} />} label="Watch hours · 28 days" value={fmtHours(watchHours)} />
+            )}
           </div>
-          <Section title="Growth" aside={
-            <a href={ch.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-[#64748b] hover:text-[#7a5d00]">
-              Open channel <ExternalLink size={12} />
-            </a>
-          }>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <TrendChart series={ch.series} field="subscribers" label="Subscribers" color={COLORS.brand} />
-              <TrendChart series={ch.series} field="total_views" label="Total views" color={GOLD} />
-              <ChangesTable channel={ch} />
-            </div>
-          </Section>
+          {ch.series.length >= 2 && (
+            <Section title="Growth" aside={
+              <a href={ch.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-[#64748b] hover:text-[#7a5d00]">
+                Open channel <ExternalLink size={12} />
+              </a>
+            }>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <TrendChart series={ch.series} field="subscribers" label="Subscribers" color={COLORS.brand} />
+                <TrendChart series={ch.series} field="total_views" label="Total views" color={GOLD} />
+                <ChangesTable channel={ch} />
+              </div>
+            </Section>
+          )}
         </div>
       ))}
 
-      {videos ? <VideoTable page={videos} nowMs={nowMs} /> : (
-        <Section title="Videos"><Empty>Could not load videos.</Empty></Section>
-      )}
+      {videos && videos.items.length > 0 && <VideoTable page={videos} nowMs={nowMs} />}
 
-      <AnalyticsSection analytics={analytics} />
-    </main>
+      {hasAnalytics && <AnalyticsSection analytics={analytics!} />}
+    </div>
   );
 }

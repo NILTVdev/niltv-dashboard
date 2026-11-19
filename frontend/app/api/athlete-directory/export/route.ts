@@ -4,8 +4,8 @@ import { backendHeaders, getSession, SESSION_COOKIE } from "@/lib/session";
 import { BACKEND_URL as BACKEND } from "@/lib/serverEnv";
 
 // Filters the export passes on to the backend. Anything else is dropped.
-const FILTERS = ["q", "sport", "school", "campus", "status", "source", "partner_consent",
-  "min_followers", "max_followers", "has_content", "include_declined", "sort"];
+const FILTERS = ["q", "sport", "school", "campus",
+  "min_followers", "max_followers", "has_content", "sort"];
 
 /**
  * The athlete directory export. The proxy only speaks JSON, and this file

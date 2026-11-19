@@ -5,11 +5,11 @@ import { useEffect, useRef, useState } from "react";
 import { Download, Search, X } from "lucide-react";
 import { cn, fmt } from "@/lib/utils";
 import {
-  DIRECTORY_PATH, EMPTY_FILTERS, FOLLOWER_RANGES, PAGE_SIZE, SORT_LABEL, STATUS_LABEL,
+  DIRECTORY_PATH, EMPTY_FILTERS, FOLLOWER_RANGES, PAGE_SIZE, SORT_LABEL,
   activeFilterCount, filtersToApiQuery, filtersToPageQuery, followerLabel, personPath, resultRange,
   type DirectoryFilters,
 } from "@/lib/athleteDirectory";
-import type { DirectoryFacets, DirectoryPage, DirectoryPerson, DirectorySort, DirectoryStatus } from "@/lib/types";
+import type { DirectoryFacets, DirectoryPage, DirectoryPerson, DirectorySort } from "@/lib/types";
 import AthleteAvatar from "./AthleteAvatar";
 
 interface Props {
@@ -21,22 +21,6 @@ interface Props {
 
 const SEARCH_DELAY_MS = 300;
 
-const STATUS_STYLE: Record<DirectoryStatus, string> = {
-  ambassador_confirmed: "bg-[var(--brand-light)] text-white",
-  roster: "bg-[var(--brand)] text-white",
-  ambassador_candidate: "border border-[var(--brand-light)] text-[var(--brand-light)]",
-  applicant: "bg-[#f1f5f9] text-[#475569]",
-};
-
-export function StatusBadge({ status }: { status: DirectoryStatus }) {
-  return (
-    <span className={cn("inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold",
-      STATUS_STYLE[status])}>
-      {STATUS_LABEL[status]}
-    </span>
-  );
-}
-
 export function SelfReported() {
   return (
     <span title="Self-reported on the signup form. Not measured."
@@ -44,10 +28,6 @@ export function SelfReported() {
       self-reported
     </span>
   );
-}
-
-function DeclinedNote() {
-  return <span className="ml-1 text-[11px] font-medium text-[#94a3b8]">declined</span>;
 }
 
 function Followers({ person }: { person: DirectoryPerson }) {
@@ -65,8 +45,7 @@ const selectClass =
 
 export default function AthleteDirectoryView({ initialFilters, initialPage, facets: initialFacets, isAdmin }: Props) {
   const [filters, setFilters] = useState<DirectoryFilters>(initialFilters);
-  const [facets, setFacets] = useState<DirectoryFacets | null>(initialFacets);
-  const facetsFor = useRef(initialFilters.include_declined);
+  const facets: DirectoryFacets | null = initialFacets;
   const [search, setSearch] = useState(initialFilters.q);
   const [data, setData] = useState<DirectoryPage | null>(initialPage);
   const [error, setError] = useState<string | null>(initialPage ? null : "The athlete list did not load.");
@@ -115,19 +94,6 @@ export default function AthleteDirectoryView({ initialFilters, initialPage, face
     return () => ctrl.abort();
   }, [apiQuery, settledQuery]);
 
-  // Facet counts include declined signups only while an admin asks for them.
-  useEffect(() => {
-    if (facetsFor.current === filters.include_declined) return;
-    facetsFor.current = filters.include_declined;
-    const ctrl = new AbortController();
-    fetch(`/api/proxy/api/athlete-directory/facets${filters.include_declined ? "?include_declined=true" : ""}`,
-          { signal: ctrl.signal })
-      .then((r) => (r.ok ? (r.json() as Promise<DirectoryFacets>) : null))
-      .then((f) => { if (f) setFacets(f); })
-      .catch(() => {});
-    return () => ctrl.abort();
-  }, [filters.include_declined]);
-
   const set = <K extends keyof DirectoryFilters>(name: K, value: DirectoryFilters[K]) =>
     setFilters((f) => ({ ...f, [name]: value, page: 0 }));
 
@@ -148,8 +114,8 @@ export default function AthleteDirectoryView({ initialFilters, initialPage, face
         <div className="min-w-0">
           <h1 className="text-2xl font-bold text-[#0f172a]">Athletes</h1>
           <p className="text-sm text-[#64748b]">
-            Roster, ambassadors and signups in one list.
-            {facets ? ` ${facets.total.toLocaleString()} athletes in all.` : ""}
+            NIL TV athletes.
+            {facets ? ` ${facets.total.toLocaleString()} in all.` : ""}
           </p>
         </div>
         {isAdmin && (
@@ -189,42 +155,6 @@ export default function AthleteDirectoryView({ initialFilters, initialPage, face
           <select aria-label="Followers" value={filters.followers} onChange={(e) => set("followers", e.target.value)} className={selectClass}>
             {FOLLOWER_RANGES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
           </select>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {(["", ...Object.keys(STATUS_LABEL)] as (DirectoryStatus | "")[]).map((s) => (
-            <button key={s || "all"} type="button" onClick={() => set("status", s)}
-                    className={cn("rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-                      filters.status === s
-                        ? "border-[var(--brand)] bg-[var(--brand)] text-white"
-                        : "border-[#e2e8f0] text-[#475569] hover:border-[var(--brand-light)]")}>
-              {s ? STATUS_LABEL[s] : "Everyone"}
-            </button>
-          ))}
-          <span className="hidden h-4 w-px bg-[#e2e8f0] sm:inline-block" />
-          {([["", "Any consent"], ["true", "Partner consent"], ["false", "No partner consent"]] as const).map(([v, label]) => (
-            <button key={v || "any"} type="button" onClick={() => set("partner_consent", v)}
-                    className={cn("rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-                      filters.partner_consent === v
-                        ? "border-[var(--brand-light)] bg-[var(--brand-pale)] text-[#8a7243]"
-                        : "border-[#e2e8f0] text-[#475569] hover:border-[var(--brand-light)]")}>
-              {label}
-            </button>
-          ))}
-          {isAdmin && (
-            <>
-              <span className="hidden h-4 w-px bg-[#e2e8f0] sm:inline-block" />
-              <button type="button" aria-pressed={filters.include_declined}
-                      onClick={() => set("include_declined", !filters.include_declined)}
-                      title="Declined signups are hidden by default. Admins only."
-                      className={cn("rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-                        filters.include_declined
-                          ? "border-[var(--brand)] bg-[var(--brand)] text-white"
-                          : "border-[#e2e8f0] text-[#475569] hover:border-[var(--brand-light)]")}>
-                Include declined
-              </button>
-            </>
-          )}
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#f1f5f9] pt-3">
@@ -268,10 +198,6 @@ export default function AthleteDirectoryView({ initialFilters, initialPage, face
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
                       <p className="truncate font-semibold text-[#0f172a]">{p.display_name}</p>
-                      <span className="flex shrink-0 items-center">
-                        <StatusBadge status={p.status} />
-                        {p.application_status === "declined" && <DeclinedNote />}
-                      </span>
                     </div>
                     <p className="truncate text-xs text-[#64748b]">
                       {[p.sport, p.school].filter(Boolean).join(" · ") || "No sport or school yet"}
@@ -295,7 +221,6 @@ export default function AthleteDirectoryView({ initialFilters, initialPage, face
                   <th className="px-4 py-3">Athlete</th>
                   <th className="px-4 py-3">Sport</th>
                   <th className="px-4 py-3">School</th>
-                  <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Instagram</th>
                   <th className="px-4 py-3 text-right">Followers</th>
                   <th className="px-4 py-3 text-right">Collab views</th>
@@ -312,10 +237,6 @@ export default function AthleteDirectoryView({ initialFilters, initialPage, face
                     </td>
                     <td className="px-4 py-2.5 text-[#475569]">{p.sport ?? "—"}</td>
                     <td className="px-4 py-2.5 text-[#475569]">{p.school ?? "—"}</td>
-                    <td className="px-4 py-2.5">
-                      <StatusBadge status={p.status} />
-                      {p.application_status === "declined" && <DeclinedNote />}
-                    </td>
                     <td className="px-4 py-2.5 text-[#475569]">{p.ig_handle ? `@${p.ig_handle}` : "—"}</td>
                     <td className="px-4 py-2.5 text-right"><Followers person={p} /></td>
                     <td className="px-4 py-2.5 text-right tabular-nums">{fmt(p.collab_views)}</td>

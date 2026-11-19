@@ -13,18 +13,15 @@ export default async function AthletesPage({ searchParams }: Props) {
   const raw = await searchParams;
   const session = await viewerSession();
   const isAdmin = session?.role === "admin";
-  const parsed = filtersFromParams({
+  const filters = filtersFromParams({
     get: (name) => {
       const v = raw[name];
       return Array.isArray(v) ? v[0] ?? null : v ?? null;
     },
   });
-  // Declined signups are admin-only; the flag is dropped for anyone else
-  // rather than turning the whole page into a 403.
-  const filters = { ...parsed, include_declined: isAdmin && parsed.include_declined };
   const [page, facets] = await Promise.all([
     getAthleteDirectory(filtersToApiQuery(filters)).catch(() => null),
-    getAthleteDirectoryFacets(filters.include_declined).catch(() => null),
+    getAthleteDirectoryFacets().catch(() => null),
   ]);
   return (
     <AthleteDirectoryView

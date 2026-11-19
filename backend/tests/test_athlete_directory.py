@@ -390,21 +390,22 @@ def test_list_requires_key():
 
 
 def test_list_search_and_paging(db, seeded):
+    db.add(Ambassador(ig_username="cole.amb", display_name="Cole Confirmed", status="confirmed",
+                      cached_followers=900))
+    db.commit()
     r = client.get(f"{BASE}/", headers=KEY)
     assert r.status_code == 200
     body = r.json()
-    assert body["total"] == 3
-    names = [p["display_name"] for p in body["items"]]
-    assert names == ["Amber Ambassador", "Rory Roster", "Ivy Applicant"]
-    ivy = body["items"][2]
-    assert ivy["followers"] == 1200 and ivy["followers_self_reported"] is True
+    # NIL TV athletes only: the roster-only and applicant-only people are not listed.
+    assert body["total"] == 2
+    assert [p["display_name"] for p in body["items"]] == ["Amber Ambassador", "Cole Confirmed"]
 
-    r = client.get(f"{BASE}/", headers=KEY, params={"q": "ivy", "limit": 1})
-    assert r.json()["total"] == 1 and r.json()["items"][0]["ig_handle"] == "ivy.app"
+    r = client.get(f"{BASE}/", headers=KEY, params={"q": "cole", "limit": 1})
+    assert r.json()["total"] == 1 and r.json()["items"][0]["ig_handle"] == "cole.amb"
+    assert client.get(f"{BASE}/", headers=KEY, params={"q": "ivy"}).json()["total"] == 0
     r = client.get(f"{BASE}/", headers=KEY, params={"sort": "name", "limit": 1, "offset": 1})
-    assert [p["display_name"] for p in r.json()["items"]] == ["Ivy Applicant"]
+    assert [p["display_name"] for p in r.json()["items"]] == ["Cole Confirmed"]
     assert client.get(f"{BASE}/", headers=KEY, params={"sort": "bogus"}).status_code == 400
-    assert client.get(f"{BASE}/", headers=KEY, params={"status": "bogus"}).status_code == 400
 
 
 def test_list_never_carries_contact_fields(db, seeded):
@@ -415,7 +416,7 @@ def test_list_never_carries_contact_fields(db, seeded):
 
 def test_facets(db, seeded):
     body = client.get(f"{BASE}/facets", headers=KEY).json()
-    assert body["total"] == 3
+    assert body["total"] == 1
     assert {"value": "Sample State", "count": 1} in body["school"]
 
 
@@ -427,9 +428,8 @@ def test_detail_history_and_posts(db, seeded):
     assert [p["post_id"] for p in body["posts"]] == ["dir-1"]
     assert body["history"][0]["ig_followers"] == 15000
 
-    roster = client.get(f"{BASE}/ath-{seeded['roster']}", headers=KEY).json()
-    assert [h["ig_followers"] for h in roster["history"]] == [4200, 4100]
-    assert [p["post_id"] for p in roster["posts"]] == ["dir-2"]  # matched by handle, case-insensitive
+    # A roster-only person is not a NIL TV athlete, so has no page.
+    assert client.get(f"{BASE}/ath-{seeded['roster']}", headers=KEY).status_code == 404
     assert client.get(f"{BASE}/amb-999999", headers=KEY).status_code == 404
 
 
@@ -468,17 +468,17 @@ def test_demo_is_refused(db, seeded):
 
 
 def test_export_csv_admin(db, seeded):
-    r = client.get(f"{BASE}/export.csv", headers=_as(db, "admin"), params={"source": "application"})
+    r = client.get(f"{BASE}/export.csv", headers=_as(db, "admin"))
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/csv")
     lines = r.text.strip().splitlines()
     assert lines[0].startswith("key,display_name,status")
-    assert len(lines) == 3  # header + the two people with an application
-    assert "amber@example.com" in r.text and "555-0101" in r.text
+    assert len(lines) == 2  # header + the one NIL TV athlete
+    assert "amber@example.com" in r.text and "555-0101" not in r.text
 
 
 def test_export_neutralizes_formulas(db):
-    db.add(Application(email="formula@example.com", first_name="=HYPERLINK(1)", last_name="Test"))
+    db.add(Ambassador(ig_username="formula.amb", display_name="=HYPERLINK(1) Test", status="confirmed"))
     db.commit()
     r = client.get(f"{BASE}/export.csv", headers=KEY)
     assert "'=HYPERLINK(1) Test" in r.text
@@ -520,30 +520,32 @@ def test_cache_sees_changes(db, seeded):
     db.commit()
     again = client.get(f"{BASE}/amb-{seeded['ambassador']}", headers=KEY).json()
     assert again["person"]["display_name"] == "Amber Renamed"
-    db.add(Application(email="late@example.com", first_name="Late", last_name="Signup"))
+    db.add(Ambassador(ig_username="late.amb", display_name="Late Ambassador", status="confirmed"))
     db.commit()
-    assert client.get(f"{BASE}/", headers=KEY).json()["total"] == 4
+    assert client.get(f"{BASE}/", headers=KEY).json()["total"] == 2
 
 
-# ── Product defaults: declined signups and admin-only answers ─────────────────
+# ── Product defaults: NIL TV athletes only, admin-only answers ────────────────
 
 @pytest.fixture()
-def with_declined(db, seeded):
-    """Ivy gets NIL answers; a declined applicant, and an ambassador whose own
-    signup was declined, join the seeded people."""
-    db.query(Application).filter(Application.email == "ivy@example.com").update({
+def with_others(db, seeded):
+    """Amber's signup gets NIL answers; a declined applicant, a candidate
+    ambassador, and a confirmed ambassador whose own signup was declined join
+    the seeded people."""
+    db.query(Application).filter(Application.email == "amber@example.com").update({
         "nil_deals_done": "Synthetic deal history", "nil_deals_wanted": "Synthetic deal wish",
         "content_type": "Synthetic content description"})
     db.add(Application(email="dee@example.com", first_name="Dee", last_name="Declined", sport="Tennis",
                        university="Declined U", instagram="@dee.declined", status="declined"))
+    db.add(Ambassador(ig_username="cara.cand", display_name="Cara Candidate", status="candidate"))
     amb2 = Ambassador(ig_username="kept.amb", display_name="Kept Ambassador", status="confirmed")
     db.add(amb2)
     db.flush()
     db.add(Application(email="kept@example.com", first_name="Kept", last_name="Ambassador",
                        instagram="@kept.amb", status="declined", ambassador_id=amb2.id))
     db.commit()
-    dee = db.query(Application.id).filter(Application.email == "dee@example.com").scalar()
-    return {**seeded, "dee": f"app-{dee}"}
+    return {**seeded, "dee": f"app-{_app_id(db, 'dee@example.com')}",
+            "ivy": f"app-{_app_id(db, 'ivy@example.com')}"}
 
 
 def _names(params=None, headers=KEY):
@@ -552,65 +554,61 @@ def _names(params=None, headers=KEY):
     return {p["display_name"] for p in r.json()["items"]}
 
 
-def test_declined_signups_are_hidden_by_default(db, with_declined):
+def test_only_niltv_athletes_are_listed(db, with_others):
     names = _names()
-    assert "Dee Declined" not in names
-    assert "Kept Ambassador" in names  # an ambassador stays, whatever an old signup says
-    assert client.get(f"{BASE}/facets", headers=KEY).json()["total"] == len(names)
-    assert "Declined U" not in {v["value"] for v in client.get(f"{BASE}/facets", headers=KEY).json()["school"]}
-    assert "Dee Declined" in _names({"include_declined": "true"})
-    assert client.get(f"{BASE}/facets", headers=KEY, params={"include_declined": "true"}).json()["total"] \
-        == len(names) + 1
+    # A confirmed ambassador stays, whatever an old signup says.
+    assert names == {"Amber Ambassador", "Kept Ambassador"}
+    facets = client.get(f"{BASE}/facets", headers=KEY).json()
+    assert facets["total"] == 2
+    assert "Declined U" not in {v["value"] for v in facets["school"]}
+    # The old filter parameters no longer widen the list.
+    assert _names({"include_declined": "true", "status": "applicant"}) == names
 
 
-def test_only_admins_may_include_declined(db, with_declined):
-    general = _as(db, "general")
+def test_only_niltv_athletes_have_a_page(db, with_others):
     admin = _as(db, "admin")
-    assert client.get(f"{BASE}/", headers=general, params={"include_declined": "true"}).status_code == 403
-    assert client.get(f"{BASE}/facets", headers=general, params={"include_declined": "true"}).status_code == 403
-    assert "Dee Declined" not in _names(headers=general)
-    assert "Dee Declined" in _names({"include_declined": "true"}, headers=admin)
-    # The page itself is hidden from general accounts too, not just the list row.
-    assert client.get(f"{BASE}/{with_declined['dee']}", headers=general).status_code == 404
-    assert client.get(f"{BASE}/{with_declined['dee']}", headers=admin).status_code == 200
+    for key in (with_others["dee"], with_others["ivy"], f"ath-{with_others['roster']}"):
+        assert client.get(f"{BASE}/{key}", headers=admin).status_code == 404
 
 
-def test_declined_signup_gets_no_library_link(db, with_declined):
+def test_library_links_only_niltv_athletes(db, with_others):
     keys = d.keys_by_handle(d.build_directory(db))
-    assert "dee.declined" not in keys
-    assert "kept.amb" in keys
+    assert "kept.amb" in keys and "amber.amb" in keys
+    for handle in ("dee.declined", "ivy.app", "rory.roster", "cara.cand"):
+        assert handle not in keys
 
 
-def test_export_leaves_declined_out_unless_asked(db, with_declined):
-    admin = _as(db, "admin")
-    assert "dee@example.com" not in client.get(f"{BASE}/export.csv", headers=admin).text
-    assert "dee@example.com" in client.get(f"{BASE}/export.csv", headers=admin,
-                                           params={"include_declined": "true"}).text
+def test_export_lists_only_niltv_athletes(db, with_others):
+    text = client.get(f"{BASE}/export.csv", headers=_as(db, "admin"),
+                      params={"include_declined": "true"}).text
+    assert "kept@example.com" in text
+    for other in ("dee@example.com", "ivy@example.com"):
+        assert other not in text
 
 
-def _ivy(headers):
-    r = client.get(f"{BASE}/", headers=headers, params={"q": "ivy"})
+def _amber(headers):
+    r = client.get(f"{BASE}/", headers=headers, params={"q": "amber"})
     assert r.status_code == 200, r.text
-    [ivy] = r.json()["items"]
-    return ivy
+    [amber] = r.json()["items"]
+    return amber
 
 
-def test_nil_answers_are_admin_only(db, with_declined):
+def test_nil_answers_are_admin_only(db, with_others):
     general = _as(db, "general")
     admin = _as(db, "admin")
-    ivy = _ivy(general)
-    assert (ivy["nil_deals_done"], ivy["nil_deals_wanted"], ivy["content_type"]) == (None, None, None)
-    assert ivy["sport"] == "Golf" and ivy["followers"] == 1200 and ivy["status"] == "applicant"
+    amber = _amber(general)
+    assert (amber["nil_deals_done"], amber["nil_deals_wanted"], amber["content_type"]) == (None, None, None)
+    assert amber["sport"] == "Lacrosse" and amber["status"] == "ambassador_confirmed"
     r = client.get(f"{BASE}/", headers=general)
     for secret in ("Synthetic deal history", "Synthetic deal wish", "Synthetic content description"):
         assert secret not in r.text
-    detail = client.get(f"{BASE}/app-{_app_id(db, 'ivy@example.com')}", headers=general)
+    detail = client.get(f"{BASE}/amb-{with_others['ambassador']}", headers=general)
     assert detail.status_code == 200 and "Synthetic deal" not in detail.text
 
-    ivy = _ivy(admin)
-    assert ivy["nil_deals_done"] == "Synthetic deal history"
-    assert ivy["nil_deals_wanted"] == "Synthetic deal wish"
-    assert ivy["content_type"] == "Synthetic content description"
+    amber = _amber(admin)
+    assert amber["nil_deals_done"] == "Synthetic deal history"
+    assert amber["nil_deals_wanted"] == "Synthetic deal wish"
+    assert amber["content_type"] == "Synthetic content description"
 
 
 def _app_id(db, email):
