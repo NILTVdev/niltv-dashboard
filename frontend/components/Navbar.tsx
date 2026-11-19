@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { LogOut, UserCircle, Users } from "lucide-react";
-import { canSeePage, HOME, ROLE_LABEL, type SessionUser } from "@/lib/access";
+import { canSeePage, HOME, LIBRARY, ROLE_LABEL, type SessionUser } from "@/lib/access";
 import { CAMPUS_CHANNELS } from "@/lib/channels";
 
 // Channel sections (TrueBlueTV's tabs) live under Campus Channels and carry
@@ -15,6 +15,8 @@ const LINKS = [
   { href: "/niltv", label: "Network" },
   { href: "/niltv-channels", label: "Channel Insights" },
   { href: CAMPUS_CHANNELS, label: "Campus Channels" },
+  { href: "/athletes", label: "Athletes" },
+  { href: LIBRARY, label: "Library" },
   { href: "/niltv-onboarding", label: "Onboarding" },
   { href: "/community-star", label: "Community Star" },
   { href: "/niltv-web-analytics", label: "Web Analytics" },
@@ -41,6 +43,20 @@ export default function Navbar() {
     navRef.current?.querySelector<HTMLElement>('[aria-current="page"]')
       ?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [pathname, me]);
+
+  // The scrollbar is hidden, so a mouse wheel over the links scrolls them
+  // sideways when they do not all fit (a laptop with every link showing).
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const onWheel = (e: WheelEvent) => {
+      if (nav.scrollWidth <= nav.clientWidth || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      e.preventDefault();
+      nav.scrollLeft += e.deltaY;
+    };
+    nav.addEventListener("wheel", onWheel, { passive: false });
+    return () => nav.removeEventListener("wheel", onWheel);
+  }, [me]);
 
   if (pathname === "/login") return null;
 
