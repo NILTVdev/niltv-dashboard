@@ -63,6 +63,12 @@ def test_password_hash_roundtrip():
     ("demo", "GET", "/api/snapshots/athletes/3", False),
     ("demo", "GET", "/api/reports/summary", False),
     ("demo", "GET", "/api/zoomphx", False),
+    ("general", "GET", "/api/library/", True),
+    ("general", "GET", "/api/library/facets", True),
+    ("general", "POST", "/api/library/sync", False),
+    ("demo", "GET", "/api/library/", False),
+    ("demo", "GET", "/api/library/status", False),
+    ("admin", "POST", "/api/library/sync", True),
     ("demo", "GET", "/api/auth/me", True),
     ("demo", "POST", "/api/auth/password", True),
 ])

@@ -35,14 +35,19 @@ _AGGREGATE = (
     "/api/network-screen",
     "/api/campus-channels",
     "/api/web-analytics",
+    "/api/youtube",
 )
-_ROSTER = ("/api/athletes", "/api/snapshots", "/api/posts")
+_ROSTER = ("/api/athletes", "/api/snapshots", "/api/posts", "/api/athlete-directory")
+# Per-clip content library: general reads it, demo does not. Its sync POST
+# stays admin/service only like every other write.
+_LIBRARY = ("/api/library",)
 READ_PREFIXES = {
-    "general": _AGGREGATE + _ROSTER,
+    "general": _AGGREGATE + _ROSTER + _LIBRARY,
     "demo": _AGGREGATE,
 }
-# Inside an allowed prefix but still admin-only (account registry, tokens).
-ADMIN_ONLY_PREFIXES = ("/api/brand/accounts",)
+# Inside an allowed prefix but still admin-only (account registry, tokens,
+# the athlete export with contact fields).
+ADMIN_ONLY_PREFIXES = ("/api/brand/accounts", "/api/athlete-directory/export.csv")
 # Every signed-in account may read itself and change its own password.
 SELF_SERVICE = {("GET", "/api/auth/me"), ("POST", "/api/auth/password")}
 

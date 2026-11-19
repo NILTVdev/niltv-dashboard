@@ -37,6 +37,7 @@ commit real values.
 | `DASHBOARD_USERNAME` | Login username (validated server-side in `app/api/auth/route.ts`). |
 | `DASHBOARD_PASSWORD` | Login password. Also used as the `X-API-Key` when `DASHBOARD_API_KEY` is unset. |
 | `DASHBOARD_API_KEY` | Key the server attaches as `X-API-Key` to backend calls. Must match the backend's `DASHBOARD_API_KEY` (or its `DASHBOARD_PASSWORD` if that is unset). |
+| `NEXT_PUBLIC_STAFF_ADMIN_URL` | Optional. Address of the app's staff admin tool, where Library clip labels are edited. Built into the page, so it is public. Empty hides the links. The tool has no per-clip URL, so links open the tool (its Content tab). Locally it is `http://localhost:5180`; it has no hosted address yet. |
 | `AUTH_DISABLED` | `true` skips the login page and cookie check. Honoured only when `NODE_ENV` is not `production`, i.e. never on Amplify. Pair with a backend running `ENVIRONMENT=local`. |
 
 Ask a maintainer for the dev values.

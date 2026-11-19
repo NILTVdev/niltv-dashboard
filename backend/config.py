@@ -198,6 +198,37 @@ class Settings(BaseSettings):
             })
         return targets
 
+    # YouTube, stage 1: public channel and video counts (Data API v3, API key
+    # only). Empty key = the run_youtube job logs "not configured" and exits 0.
+    # Channel ids are comma-separated; the default is the NIL TV channel.
+    YOUTUBE_DEFAULT_CHANNEL: ClassVar[str] = "UCUymcAQIWHuhxwogARfes5A"
+    youtube_api_key: str = ""
+    youtube_channel_ids: str = YOUTUBE_DEFAULT_CHANNEL
+
+    # YouTube, stage 2: watch time and retention (YouTube Analytics API v2).
+    # Needs the channel owner's one-time consent: scripts/youtube_oauth.py
+    # prints the refresh token. Any of the three empty = "not connected".
+    youtube_oauth_client_id: str = ""
+    youtube_oauth_client_secret: str = ""
+    youtube_oauth_refresh_token: str = ""
+
+    def youtube_channel_id_list(self) -> list[str]:
+        ids = [c.strip() for c in self.youtube_channel_ids.split(",") if c.strip()]
+        # An empty YOUTUBE_CHANNEL_IDS= line in .env means "the default".
+        return ids or [self.YOUTUBE_DEFAULT_CHANNEL]
+
+    @property
+    def youtube_configured(self) -> bool:
+        return bool(self.youtube_api_key.strip())
+
+    @property
+    def youtube_analytics_configured(self) -> bool:
+        return all(v.strip() for v in (
+            self.youtube_oauth_client_id,
+            self.youtube_oauth_client_secret,
+            self.youtube_oauth_refresh_token,
+        ))
+
     # AWS
     aws_s3_bucket: str
     aws_sns_topic_arn: str = ""

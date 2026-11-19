@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import {
-  Users, Eye, FileText, TrendingUp, Heart, MessageCircle,
-  Share2, Bookmark, ExternalLink, TriangleAlert, Info,
+  Users, Eye, FileText, Heart, MessageCircle,
+  Share2, Bookmark, ExternalLink, Info,
 } from "lucide-react";
 import type {
   NetworkScreenSummary,
@@ -15,6 +15,7 @@ import type {
 } from "@/lib/types";
 import { FORMAT_LABELS, formatLabel } from "@/lib/formatLabels";
 import { fmt, fmtDate } from "@/lib/utils";
+import YoutubeDetail, { type YoutubeData } from "./YoutubeView";
 
 const PLATFORMS = ["instagram", "facebook", "youtube", "tiktok", "snapchat", "linkedin"] as const;
 const PLATFORM_LABELS: Record<string, string> = {
@@ -82,6 +83,7 @@ function CompareRow({
   prior: number | null;
   isPercent?: boolean;
 }) {
+  if (current == null && prior == null) return null;
   const suffix = isPercent ? "%" : "";
   const d = delta(current != null && prior != null ? current - prior : null);
   return (
@@ -284,32 +286,19 @@ function PlatformTabs({
 }) {
   return (
     <div className="flex gap-2 flex-wrap">
-      {PLATFORMS.map((p) => {
-        const live = availableSet.has(p);
-        const isActive = active === p;
-        return (
-          <button
-            key={p}
-            disabled={!live}
-            onClick={() => live && onChange(p)}
-            className={[
-              "px-4 py-1.5 rounded-full text-sm font-medium transition-colors",
-              isActive
-                ? "bg-[#C9A227] text-white"
-                : live
-                ? "bg-[#f1f5f9] text-[#475569] hover:bg-[#e2e8f0]"
-                : "bg-[#f8fafc] text-[#cbd5e1] cursor-not-allowed",
-            ].join(" ")}
-          >
-            {PLATFORM_LABELS[p]}
-            {!live && (
-              <span className="ml-1.5 text-[9px] font-semibold uppercase tracking-wide opacity-60">
-                soon
-              </span>
-            )}
-          </button>
-        );
-      })}
+      {PLATFORMS.filter((p) => availableSet.has(p)).map((p) => (
+        <button
+          key={p}
+          type="button"
+          onClick={() => onChange(p)}
+          className={[
+            "px-4 py-1.5 rounded-full text-sm font-medium transition-colors",
+            active === p ? "bg-[#C9A227] text-white" : "bg-[#f1f5f9] text-[#475569] hover:bg-[#e2e8f0]",
+          ].join(" ")}
+        >
+          {PLATFORM_LABELS[p]}
+        </button>
+      ))}
     </div>
   );
 }
@@ -319,16 +308,11 @@ function PlatformTabs({
 function AggregateBanner({ summary, periodLabel }: { summary: NetworkScreenSummary; periodLabel: string }) {
   const agg = summary.aggregate;
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
       {[
         { label: "Total Followers", value: val(agg.total_followers), icon: <Users size={14} /> },
         { label: `Views · ${periodLabel}`, value: val(agg.total_views_monthly), icon: <Eye size={14} /> },
         { label: `Posts · ${periodLabel}`, value: String(agg.total_posts_monthly), icon: <FileText size={14} /> },
-        {
-          label: "Platforms Live",
-          value: `${agg.platforms_live} / ${agg.platforms_total}`,
-          icon: <TrendingUp size={14} />,
-        },
       ].map(({ label, value, icon }) => (
         <div
           key={label}
@@ -391,17 +375,11 @@ function PlatformDetail({
     ? prior2Date.toLocaleString("default", { month: "long", year: "numeric" })
     : priorDate.toLocaleString("default", { month: "long", year: "numeric" });
   const periodLabel = mode === "rolling30" ? "Last 30 Days" : mode === "mtd" ? "Month to Date" : mode === "prevmonth" ? "Previous Month" : "Current Month";
+  const youtube = platform === "youtube";
+  const followersLabel = youtube ? "Subscribers" : "Followers";
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Collab warning */}
-      {current.collab_data_warning && (
-        <div className="flex items-start gap-2 rounded-xl bg-[#fffbeb] border border-[#fde68a] px-4 py-3 text-xs text-[#92400e]">
-          <TriangleAlert size={14} className="mt-0.5 shrink-0 text-[#d97706]" />
-          Collab post counts come from the nightly Instagram collab pull. Shares, saves, and reach are
-          not available for posts owned by an athlete, so engagement rate on those posts runs low.
-        </div>
-      )}
 
       {/* Four key ratios */}
       {ratios && (
@@ -410,26 +388,30 @@ function PlatformDetail({
             Key Ratios
           </h3>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <RatioCard
-              label="Last 7 Days Views / Followers"
-              value={ratios.weekly_views_to_followers != null ? `${ratios.weekly_views_to_followers}×` : "—"}
-              description="Published-post views over the latest 7 days"
-            />
-            <RatioCard
-              label="Views per Post / Followers"
-              value={ratios.views_per_post_to_followers != null ? `${ratios.views_per_post_to_followers}×` : "—"}
-              description="Avg post reach vs. follower count"
-            />
-            <RatioCard
-              label="Avg Views per Reel/Video"
-              value={ratios.avg_views_per_reel != null ? fmt(Math.round(ratios.avg_views_per_reel)) : "—"}
-              description={periodLabel}
-            />
-            <RatioCard
-              label="Reel/Video Engagement Rate"
-              value={ratios.engagement_rate_reels != null ? `${ratios.engagement_rate_reels}%` : "—"}
-              description="(Likes+Comments+Shares+Saves) ÷ Views"
-            />
+            {[
+              {
+                label: "Last 7 Days Views / Followers",
+                value: ratios.weekly_views_to_followers != null ? `${ratios.weekly_views_to_followers}×` : null,
+                description: "Published-post views over the latest 7 days",
+              },
+              {
+                label: "Views per Post / Followers",
+                value: ratios.views_per_post_to_followers != null ? `${ratios.views_per_post_to_followers}×` : null,
+                description: "Avg post reach vs. follower count",
+              },
+              {
+                label: youtube ? "Avg Views per Short" : "Avg Views per Reel/Video",
+                value: ratios.avg_views_per_reel != null ? fmt(Math.round(ratios.avg_views_per_reel)) : null,
+                description: periodLabel,
+              },
+              {
+                label: youtube ? "Shorts Engagement Rate" : "Reel/Video Engagement Rate",
+                value: ratios.engagement_rate_reels != null ? `${ratios.engagement_rate_reels}%` : null,
+                description: youtube ? "(Likes+Comments) ÷ Views" : "(Likes+Comments+Shares+Saves) ÷ Views",
+              },
+            ].filter((c) => c.value != null).map((c) => (
+              <RatioCard key={c.label} label={c.label} value={c.value!} description={c.description} />
+            ))}
           </div>
         </div>
       )}
@@ -446,14 +428,16 @@ function PlatformDetail({
               <span className="text-right">{priorLabel}</span>
               <span className="text-right">Change</span>
             </div>
-            <CompareRow label="Followers" current={current.followers} prior={prior?.followers ?? null} />
-            <CompareRow label={`New Followers (${periodLabel.toLowerCase()})`} current={current.new_followers_monthly} prior={prior?.new_followers_monthly ?? null} />
+            <CompareRow label={followersLabel} current={current.followers} prior={prior?.followers ?? null} />
+            <CompareRow label={`New ${followersLabel} (${periodLabel.toLowerCase()})`} current={current.new_followers_monthly} prior={prior?.new_followers_monthly ?? null} />
             <CompareRow label={`Posts Published (${periodLabel.toLowerCase()})`} current={current.posts_monthly} prior={prior?.posts_monthly ?? null} />
             <CompareRow label="Avg Posts / Week (4-wk)" current={current.avg_posts_per_week} prior={prior?.avg_posts_per_week ?? null} />
             <CompareRow label={`Total Views (${periodLabel.toLowerCase()})`} current={current.total_views_monthly} prior={prior?.total_views_monthly ?? null} />
             <CompareRow label="Avg Views / Post" current={current.avg_views_per_post} prior={prior?.avg_views_per_post ?? null} />
             <CompareRow label="Engagement Rate %" current={current.engagement_rate_overall} prior={prior?.engagement_rate_overall ?? null} isPercent />
-            <CompareRow label={`Collabs Published (${periodLabel.toLowerCase()})`} current={current.collabs_published_monthly} prior={prior?.collabs_published_monthly ?? null} />
+            {current.collabs_published_monthly != null && (
+              <CompareRow label={`Collabs Published (${periodLabel.toLowerCase()})`} current={current.collabs_published_monthly} prior={prior?.collabs_published_monthly ?? null} />
+            )}
           </div>
         </div>
       </Section>
@@ -471,6 +455,8 @@ function PlatformDetail({
 export default function NetworkScreenView({
   summaries,
   topPosts,
+  youtube,
+  initialPlatform,
 }: {
   summaries: {
     month: NetworkScreenSummary | null;
@@ -479,8 +465,11 @@ export default function NetworkScreenView({
     prevmonth: NetworkScreenSummary | null;
   };
   topPosts: NetworkScreenTopPost[];
+  youtube: YoutubeData;
+  /** Tab to open first (?platform=youtube), when that platform has data. */
+  initialPlatform?: string;
 }) {
-  const [activePlatform, setActivePlatform] = useState("instagram");
+  const [activePlatform, setActivePlatform] = useState(initialPlatform ?? "instagram");
   // Current month is the preferred default; its column header carries a
   // "thru <date>" marker so early-month low numbers read as in-progress.
   const [comparisonMode, setComparisonMode] = useState<"month" | "mtd" | "rolling30" | "prevmonth">("month");
@@ -505,7 +494,12 @@ export default function NetworkScreenView({
     summary.platforms.filter((p) => p.available).map((p) => p.platform),
   );
 
-  const activePlatformData = summary.platforms.find((p) => p.platform === activePlatform);
+  // The YouTube tab shows when either the network numbers or the YouTube pull have data.
+  if (youtube.summary?.channels.length) availableSet.add("youtube");
+  const livePlatforms = PLATFORMS.filter((p) => availableSet.has(p));
+  const shownPlatform = availableSet.has(activePlatform) ? activePlatform : livePlatforms[0] ?? "instagram";
+  const activePlatformData = summary.platforms.find((p) => p.platform === shownPlatform);
+  const liveLabels = livePlatforms.map((p) => PLATFORM_LABELS[p]);
 
   return (
     <main className="max-w-6xl mx-auto px-4 py-8 flex flex-col gap-6">
@@ -513,10 +507,7 @@ export default function NetworkScreenView({
       <div>
         <h1 className="text-2xl font-bold text-[#0f172a]">Channel Insights</h1>
         <p className="text-sm text-[#64748b] mt-1">
-          NIL TV&apos;s own social channels · Instagram live ·{" "}
-          <span className="text-[#94a3b8]">
-            Facebook, YouTube, TikTok, Snapchat, LinkedIn coming soon
-          </span>
+          NIL TV&apos;s own social channels · {liveLabels.join(", ")}
         </p>
       </div>
 
@@ -558,21 +549,26 @@ export default function NetworkScreenView({
       {/* Platform selector + per-platform detail */}
       <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm p-6 flex flex-col gap-5">
         <PlatformTabs
-          active={activePlatform}
+          active={shownPlatform}
           availableSet={availableSet}
           onChange={setActivePlatform}
         />
-        <PlatformDetail
-          platform={activePlatform}
-          ratios={activePlatformData?.ratios ?? null}
-          current={activePlatformData?.current_month ?? null}
-          prior={activePlatformData?.prior_month ?? null}
-          mode={comparisonMode}
-          weekly={summary.weekly_comparison}
-        />
+        {activePlatformData?.current_month && (
+          <PlatformDetail
+            platform={shownPlatform}
+            ratios={activePlatformData.ratios ?? null}
+            current={activePlatformData.current_month}
+            prior={activePlatformData.prior_month ?? null}
+            mode={comparisonMode}
+            weekly={shownPlatform === "instagram" ? summary.weekly_comparison : undefined}
+          />
+        )}
       </div>
 
-      {/* Best performing posts — all-time, not per-platform */}
+      {shownPlatform === "youtube" && <YoutubeDetail {...youtube} />}
+
+      {/* Best performing posts: Instagram, all time */}
+      {shownPlatform === "instagram" && (
       <Section title="Best Performing Posts · Instagram (All Time, by Views)">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
           <div className="flex items-center gap-1.5 text-xs text-[#94a3b8]">
@@ -601,6 +597,7 @@ export default function NetworkScreenView({
           return new Date(post.publish_time).getTime() >= cutoff;
         })} />
       </Section>
+      )}
     </main>
   );
 }

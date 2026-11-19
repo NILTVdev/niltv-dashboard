@@ -14,7 +14,9 @@ import type { Snapshot } from "@/lib/types";
 import { fmt, fmtDate } from "@/lib/utils";
 
 interface Props {
-  snapshots: Snapshot[];
+  // Newest first. Only the date and the Instagram count are drawn, so the
+  // athlete directory's history points fit as well as roster snapshots.
+  snapshots: Pick<Snapshot, "pulled_at" | "ig_followers">[];
 }
 
 export default function FollowerChart({ snapshots }: Props) {
