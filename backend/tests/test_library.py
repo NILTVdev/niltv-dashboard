@@ -421,3 +421,41 @@ def test_role_access(db):
     assert client.post(SYNC, headers=KEY, json=FIXTURE).status_code == 200   # service caller (ingest)
     assert client.post(SYNC, json=FIXTURE).status_code == 401
     assert client.get(LIST).status_code == 401
+
+
+# ── Content API tagging: staff tags, series, asset type (migration 037) ───────
+
+def test_tags_series_and_asset_type_sync_filter_facet_and_search(db):
+    body = snapshot()
+    body["items"][0].update({"tags": ["Rivalry Week", "hype"], "asset_type": "short"})
+    body["items"][1].update({"tags": ["hype"], "asset_type": "episode", "series_id": "se-sample-show",
+                             "series_name": "Sample Show", "season": 1, "episode": 4})
+    first, second = body["items"][0]["content_id"], body["items"][1]["content_id"]
+    sync(body)
+
+    one = client.get(f"/api/library/{second}", headers=KEY).json()
+    assert one["tags"] == ["hype"] and one["asset_type"] == "episode"
+    assert (one["series_id"], one["series_name"], one["season"], one["episode"]) == ("se-sample-show", "Sample Show", 1, 4)
+
+    assert set(ids({"tag": "hype"})) == {first, second}
+    assert ids({"tag": "Rivalry Week"}) == [first]
+    assert ids({"series": "se-sample-show"}) == [second]
+    assert ids({"asset_type": "short"}) == [first]
+    # Rows that never set an asset type count as clips, as in the content API.
+    assert len(ids({"asset_type": "clip"})) == len(body["items"]) - 2
+
+    assert first in ids({"q": "rivalry"}) and second in ids({"q": "Sample Show"})
+
+    facets = client.get("/api/library/facets", headers=KEY).json()
+    assert {"value": "hype", "label": "hype", "count": 2} in facets["tag"]
+    assert {"value": "se-sample-show", "label": "Sample Show", "count": 1} in facets["series"]
+    assert {v["value"] for v in facets["asset_type"]} == {"clip", "short", "episode"}
+
+
+def test_older_app_build_without_the_new_fields_still_syncs(db):
+    body = snapshot()
+    for item in body["items"]:
+        for k in ("tags", "asset_type", "series_id", "series_name", "season", "episode"):
+            item.pop(k, None)
+    assert sync(body)["upserted"] == len(body["items"])
+    assert client.get(LIST, headers=KEY, params={"limit": 1}).json()["items"][0]["tags"] == []

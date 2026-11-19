@@ -55,6 +55,10 @@ def test_app_sample_is_accepted_and_stored(db):
         assert row.athletes == item["athletes"]
         assert list(row.unresolved_handles) == item["unresolved_handles"]
         assert row.duration_sec == item["duration_sec"]
+        assert list(row.tags) == item["tags"]
+        assert row.asset_type == item["asset_type"]
+        assert (row.series_id, row.series_name) == (item["series_id"], item["series_name"])
+        assert (row.season, row.episode) == (item["season"], item["episode"])
 
     run = db.query(LibrarySyncRun).one()
     assert run.ok and run.received == n and run.upserted == n

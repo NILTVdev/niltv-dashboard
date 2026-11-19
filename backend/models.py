@@ -936,6 +936,12 @@ class LibraryItem(Base):
     content_types = Column(ARRAY(Text), nullable=False, default=list)
     categories = Column(ARRAY(Text), nullable=False, default=list)
     sponsor = Column(Text)
+    tags = Column(ARRAY(Text), nullable=False, default=list)          # migration 037
+    asset_type = Column(Text)                                          # episode | clip | short
+    series_id = Column(Text)
+    series_name = Column(Text)
+    season = Column(Integer)
+    episode = Column(Integer)
     athletes = Column(JSONB, nullable=False, default=list)
     unresolved_handles = Column(ARRAY(Text), nullable=False, default=list)
     status = Column(Text, nullable=False, default="")

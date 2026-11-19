@@ -7,7 +7,7 @@ import type { LibraryFacetKey, LibraryFacets, LibraryItem, LibraryPage, LibraryS
 import {
   FACETS, LIBRARY_PATH, NO_FILTERS, PAGE_SIZE, SORTS,
   activeFilterCount, athleteHref, athleteLabel, effectiveSort, fmtDuration, libraryQuery,
-  needsTagging, pageQuery, qcLabel, staffAdminUrl, syncStatusLine, tagChips,
+  ASSET_TYPE_LABEL, needsTagging, pageQuery, qcLabel, seriesLabel, staffAdminUrl, syncStatusLine, tagChips,
   type LibraryFilters, type LibrarySort,
 } from "@/lib/library";
 import { cn, fmt, fmtDate } from "@/lib/utils";
@@ -176,6 +176,8 @@ export default function LibraryView({
               {FACETS.map(({ key, label }) => {
                 const values = loaded.facets?.[key] ?? [];
                 const selected = facets[key] ?? "";
+                // Only filters with something to pick from are shown.
+                if (!values.length && !selected) return null;
                 return (
                   <label key={key} className="flex flex-col gap-1 min-w-0">
                     <span className="text-[11px] font-medium text-[#64748b]">{label}</span>
@@ -485,6 +487,9 @@ function ClipDrawer({ item, onClose }: { item: LibraryItem; onClose: () => void 
             <TagRow label="Content type" values={types} />
             <TagRow label="Categories" values={item.categories} />
             <TagRow label="Sponsor" values={item.sponsor ? [item.sponsor] : []} />
+            <TagRow label="Tags" values={item.tags ?? []} />
+            <TagRow label="Series" values={seriesLabel(item) ? [seriesLabel(item)!] : []} />
+            <TagRow label="Type" values={[ASSET_TYPE_LABEL[item.asset_type ?? "clip"] ?? item.asset_type ?? "Clip"]} />
             <TagRow label="Keywords" values={item.keywords} />
           </section>
 
@@ -545,17 +550,15 @@ function Pill({ tone, children }: { tone: "gold" | "plain" | "dark"; children: R
   );
 }
 
+/** One label row in the detail panel. Left out when the clip has no value. */
 function TagRow({ label, values }: { label: string; values: string[] }) {
+  if (!values.length) return null;
   return (
     <div className="flex gap-3 text-sm">
       <span className="w-28 shrink-0 text-[#64748b]">{label}</span>
-      {values.length ? (
-        <div className="flex min-w-0 flex-wrap gap-1">
-          {values.map((v) => <Chip key={v}>{v}</Chip>)}
-        </div>
-      ) : (
-        <span className="text-[#94a3b8]">—</span>
-      )}
+      <div className="flex min-w-0 flex-wrap gap-1">
+        {values.map((v) => <Chip key={v}>{v}</Chip>)}
+      </div>
     </div>
   );
 }
